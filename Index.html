@@ -1,0 +1,1840 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="献立＆食事管理" />
+  <meta name="theme-color" content="#f8fafc" />
+  <title>週間夕食献立＆食事管理</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Sans+JP:wght@400;500;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root { --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px); }
+    html, body { font-family: 'Inter','Noto Sans JP',-apple-system,sans-serif; background:#e2e8f0; color:#0f172a; -webkit-tap-highlight-color:transparent; overscroll-behavior-y:none; overflow-x:hidden; }
+    @media (max-width:480px){ html,body{ background:#f8fafc; } }
+    .glass { background:rgba(255,255,255,0.94); backdrop-filter:saturate(180%) blur(16px); -webkit-backdrop-filter:saturate(180%) blur(16px); }
+    .safe-pt { padding-top:calc(var(--sat) + 0.65rem); }
+    .safe-pb { padding-bottom:calc(var(--sab) + 0.45rem); }
+    .content-pb { padding-bottom:calc(var(--sab) + 6.2rem); }
+    .no-sb::-webkit-scrollbar { display:none; } .no-sb { -ms-overflow-style:none; scrollbar-width:none; }
+    .ring-anim { transition:stroke-dashoffset .45s cubic-bezier(.22,1,.36,1), stroke .25s ease; }
+    .sheet { animation:slideUp .22s cubic-bezier(.22,1,.36,1) forwards; }
+    @keyframes slideUp { from{ transform:translateY(100%); opacity:.85; } to{ transform:translateY(0); opacity:1; } }
+    input[type="range"] { -webkit-appearance:none; appearance:none; background:transparent; }
+    input[type="range"]::-webkit-slider-runnable-track { height:8px; border-radius:9999px; background:#e2e8f0; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:22px; height:22px; border-radius:9999px; background:#10b981; border:3px solid #fff; box-shadow:0 2px 6px rgba(16,185,129,.35); margin-top:-7px; }
+  </style>
+</head>
+<body class="antialiased">
+  <div id="app" class="min-h-screen w-full max-w-md mx-auto bg-[#f8fafc] relative flex flex-col sm:shadow-2xl sm:border-x sm:border-slate-200 overflow-x-hidden">
+
+    <!-- 固定ヘッダー -->
+    <header class="sticky top-0 z-30 glass border-b border-slate-200/80 px-4 safe-pt pb-2.5 flex items-center justify-between gap-2">
+      <div class="min-w-0">
+        <p id="hdr-sub" class="text-[10px] font-extrabold text-emerald-600 tracking-wider uppercase">WEEKLY DINNER PLAN</p>
+        <h1 id="hdr-title" class="text-lg font-extrabold text-slate-900 truncate">夕食献立（月〜日）</h1>
+      </div>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <span id="hdr-ai-mode" class="px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-[10px] font-extrabold">AI標準</span>
+        <button id="btn-hdr-stock" type="button" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold active:scale-95">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span>食材 <span id="hdr-stock-cnt">0</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="flex-1 px-4 pt-3.5 content-pb space-y-4">
+
+      <!-- ==================== TAB 1: 夕食献立（月〜日） ==================== -->
+      <section id="tab-dinners" class="space-y-3.5">
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/70 space-y-3">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <span class="inline-block px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold">週1回の買い物連動</span>
+              <h2 class="text-sm font-extrabold text-slate-900 mt-1">月〜日の夕食プラン</h2>
+            </div>
+            <div class="text-right">
+              <p class="text-[10px] font-semibold text-slate-400">夕食目安 / 設定状況</p>
+              <p class="text-xs font-extrabold text-emerald-700">約<span id="din-hdr-target">800</span>kcal・<span id="din-hdr-stat">0/7日</span></p>
+            </div>
+          </div>
+          <button id="btn-open-ai-din" type="button" class="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-extrabold text-sm shadow-md shadow-emerald-500/20 active:scale-[0.98] transition">
+            ✨ 買った食材から夕食献立を作成
+          </button>
+          <div class="grid grid-cols-3 gap-2">
+            <button id="btn-open-recipe" type="button" class="col-span-2 py-2.5 px-3 rounded-2xl bg-amber-50 text-amber-800 border border-amber-200 font-extrabold text-xs active:scale-[0.98]">🔍 レシピサイト検索</button>
+            <button id="btn-reset-din" type="button" class="col-span-1 py-2.5 px-2 rounded-2xl bg-slate-100 text-slate-600 font-bold text-xs active:scale-[0.98]">献立クリア</button>
+          </div>
+        </div>
+        <div id="dinner-list" class="space-y-3"></div>
+      </section>
+
+      <!-- ==================== TAB 2: 食事管理（月〜日＆写真AI） ==================== -->
+      <section id="tab-meals" class="hidden space-y-3.5">
+        <!-- 月〜日 曜日切替バー -->
+        <div class="bg-white rounded-2xl p-2 shadow-sm border border-slate-200/70 space-y-2">
+          <div class="flex items-center justify-between px-1.5">
+            <span id="ml-week-range" class="text-[11px] font-extrabold text-slate-500">今週の食事管理</span>
+            <button id="btn-ml-today" type="button" class="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold active:scale-95">今日へ戻る</button>
+          </div>
+          <div id="week-strip" class="grid grid-cols-7 gap-1"></div>
+        </div>
+
+        <!-- カロリーリング＆PFCサマリー -->
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/70 space-y-3.5">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-1.5">
+              <span id="ml-date-badge" class="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-xs font-extrabold">今日</span>
+              <span class="text-xs font-bold text-slate-500">の摂取バランス</span>
+            </div>
+            <span id="ml-planned-lbl" class="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">予定 0kcal</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <div class="relative w-28 h-28 shrink-0 flex items-center justify-center">
+              <svg class="w-28 h-28 -rotate-90" viewBox="0 0 110 110">
+                <circle cx="55" cy="55" r="46" stroke="#e2e8f0" stroke-width="10" fill="none" />
+                <circle id="ml-ring" cx="55" cy="55" r="46" stroke="#10b981" stroke-width="10" fill="none" stroke-linecap="round" stroke-dasharray="289.03" stroke-dashoffset="289.03" class="ring-anim" />
+              </svg>
+              <div class="absolute inset-0 flex flex-col items-center justify-center">
+                <span id="ml-pct" class="text-xl font-extrabold text-slate-900 leading-none">0%</span>
+                <span class="text-[10px] font-bold text-slate-400 mt-1">達成率</span>
+              </div>
+            </div>
+            <div class="flex-1 min-w-0 space-y-2">
+              <div>
+                <p class="text-[11px] font-semibold text-slate-400">摂取 / 1日目標</p>
+                <div class="flex items-baseline gap-1 flex-wrap">
+                  <span id="ml-eaten" class="text-2xl font-extrabold text-slate-900">0</span>
+                  <span class="text-xs font-semibold text-slate-400">/ <span id="ml-target">2,000</span> kcal</span>
+                </div>
+              </div>
+              <div id="ml-pill" class="inline-flex items-center px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-extrabold">残り 2,000 kcal</div>
+            </div>
+          </div>
+          <div class="pt-3 border-t border-slate-100 space-y-2">
+            <div class="space-y-1">
+              <div class="flex justify-between text-[11px] font-bold"><span class="text-emerald-700">たんぱく質 (P)</span><span id="ml-p-txt" class="text-slate-600">0g / 125g</span></div>
+              <div class="w-full h-2 rounded-full bg-slate-100 overflow-hidden"><div id="ml-p-bar" class="h-full bg-emerald-500 rounded-full transition-all" style="width:0%"></div></div>
+            </div>
+            <div class="space-y-1">
+              <div class="flex justify-between text-[11px] font-bold"><span class="text-amber-700">脂質 (F)</span><span id="ml-f-txt" class="text-slate-600">0g / 56g</span></div>
+              <div class="w-full h-2 rounded-full bg-slate-100 overflow-hidden"><div id="ml-f-bar" class="h-full bg-amber-500 rounded-full transition-all" style="width:0%"></div></div>
+            </div>
+            <div class="space-y-1">
+              <div class="flex justify-between text-[11px] font-bold"><span class="text-sky-700">炭水化物 (C)</span><span id="ml-c-txt" class="text-slate-600">0g / 250g</span></div>
+              <div class="w-full h-2 rounded-full bg-slate-100 overflow-hidden"><div id="ml-c-bar" class="h-full bg-sky-500 rounded-full transition-all" style="width:0%"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 料理写真からカロリー算出AIカード -->
+        <div class="bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-2xl p-3.5 shadow-md space-y-2.5">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <p class="text-[10px] font-bold text-emerald-100">AI PHOTO CALORIE</p>
+              <h3 class="text-sm font-extrabold">📷 料理写真からカロリー算出</h3>
+            </div>
+            <span class="px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-bold">自動保存</span>
+          </div>
+          <input id="in-dish-cam" type="file" accept="image/*" capture="environment" class="hidden" />
+          <input id="in-dish-lib" type="file" accept="image/*" class="hidden" />
+          <div class="grid grid-cols-2 gap-2">
+            <button id="btn-dish-cam" type="button" class="py-2.5 px-3 rounded-xl bg-white text-emerald-800 font-extrabold text-xs shadow-sm active:scale-95 flex items-center justify-center gap-1.5"><span>📷</span><span>カメラで撮影</span></button>
+            <button id="btn-dish-lib" type="button" class="py-2.5 px-3 rounded-xl bg-emerald-950/30 border border-white/25 text-white font-extrabold text-xs active:scale-95 flex items-center justify-center gap-1.5"><span>🖼️</span><span>写真から選択</span></button>
+          </div>
+          <div id="dish-loading" class="hidden rounded-xl bg-white/15 p-2.5 flex items-center gap-2.5">
+            <img id="dish-load-thumb" src="" alt="" class="w-11 h-11 rounded-lg object-cover border border-white/30 shrink-0" />
+            <div class="flex-1 min-w-0">
+              <p class="text-xs font-extrabold flex items-center gap-1.5"><span class="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-amber-300 rounded-full animate-spin"></span>料理のカロリーを算出中...</p>
+              <p class="text-[10px] text-emerald-100 mt-0.5">料理名・kcal・PFCを解析しています</p>
+            </div>
+          </div>
+          <div id="dish-err" class="hidden rounded-xl bg-rose-950/60 border border-rose-300/40 p-2.5 text-[11px] text-rose-100 font-semibold"></div>
+        </div>
+
+        <!-- 時間帯別食事リスト（朝・昼・夕・間食） -->
+        <div id="meal-sections" class="space-y-3"></div>
+      </section>
+
+      <!-- ==================== TAB 3: 推移・履歴（過去の蓄積データ） ==================== -->
+      <section id="tab-history" class="hidden space-y-3.5">
+        <!-- 期間切替（7日間 / 30日間） -->
+        <div class="bg-white rounded-2xl p-1.5 shadow-sm border border-slate-200/70 grid grid-cols-2 gap-1">
+          <button type="button" data-hdays="7" class="hperiod-btn py-2.5 rounded-xl text-xs font-extrabold bg-emerald-600 text-white shadow-sm">直近7日間</button>
+          <button type="button" data-hdays="30" class="hperiod-btn py-2.5 rounded-xl text-xs font-extrabold text-slate-500">直近30日間</button>
+        </div>
+
+        <!-- 期間サマリー -->
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/70 space-y-3">
+          <div class="grid grid-cols-3 gap-2 text-center">
+            <div class="bg-slate-50 rounded-xl p-2.5">
+              <p class="text-[10px] font-bold text-slate-400">平均摂取</p>
+              <p id="hist-avg-cal" class="text-base font-extrabold text-slate-900 mt-0.5">0</p>
+              <p class="text-[9px] text-slate-400">kcal / 日</p>
+            </div>
+            <div class="bg-emerald-50/80 rounded-xl p-2.5">
+              <p class="text-[10px] font-bold text-emerald-700">目標達成</p>
+              <p id="hist-ok-rate" class="text-base font-extrabold text-emerald-700 mt-0.5">0%</p>
+              <p id="hist-ok-sub" class="text-[9px] text-emerald-600/80">0 / 0日</p>
+            </div>
+            <div class="bg-slate-50 rounded-xl p-2.5">
+              <p class="text-[10px] font-bold text-slate-400">記録日数</p>
+              <p id="hist-rec-days" class="text-base font-extrabold text-slate-900 mt-0.5">0日</p>
+              <p id="hist-period-lbl" class="text-[9px] text-slate-400">直近7日中</p>
+            </div>
+          </div>
+          <div class="grid grid-cols-3 gap-2 text-center pt-2 border-t border-slate-100 text-[11px] font-bold">
+            <div class="text-emerald-700">平均P: <span id="hist-avg-p">0</span>g</div>
+            <div class="text-amber-700">平均F: <span id="hist-avg-f">0</span>g</div>
+            <div class="text-sky-700">平均C: <span id="hist-avg-c">0</span>g</div>
+          </div>
+        </div>
+
+        <!-- SVG カロリー推移棒グラフ -->
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/70 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-extrabold text-slate-900">日別摂取カロリー推移</h3>
+            <span class="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
+              <span class="inline-block w-3 border-t-2 border-dashed border-emerald-500"></span>目標 <span id="hist-tgt-lbl">2,000</span>kcal
+            </span>
+          </div>
+          <div id="hist-chart-svg" class="w-full overflow-x-auto no-sb"></div>
+          <div class="rounded-xl bg-emerald-50/80 border border-emerald-200/80 p-3 flex items-center justify-between gap-2">
+            <div class="min-w-0">
+              <p id="hs-date" class="text-xs font-extrabold text-emerald-900">棒グラフをタップして詳細確認</p>
+              <p id="hs-stats" class="text-[11px] font-semibold text-emerald-700 mt-0.5">-</p>
+            </div>
+            <button id="btn-hs-jump" type="button" class="hidden shrink-0 px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-extrabold active:scale-95">記録を開く</button>
+          </div>
+        </div>
+
+        <!-- 体重記録＆SVG折れ線グラフ -->
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/70 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-extrabold text-slate-900">体重推移＆記録</h3>
+            <span id="w-cnt" class="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">0件</span>
+          </div>
+          <form id="form-wlog" class="flex gap-2">
+            <input id="w-val-in" type="number" step="0.1" inputmode="decimal" required placeholder="体重(kg)" class="w-24 shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-extrabold outline-none focus:bg-white focus:border-emerald-500" />
+            <input id="w-memo" type="text" placeholder="メモ（任意）" class="flex-1 min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs outline-none focus:bg-white focus:border-emerald-500" />
+            <button type="submit" class="px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-extrabold active:scale-95 shrink-0">記録</button>
+          </form>
+          <div id="w-chart" class="rounded-xl bg-slate-50 border border-slate-200/70 p-2.5"></div>
+          <div id="w-list" class="space-y-1.5"></div>
+        </div>
+
+        <!-- 日別食事履歴アコーディオン -->
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between px-1">
+            <h3 class="text-xs font-extrabold text-slate-700">日別の食事履歴（タップで詳細）</h3>
+            <div class="flex gap-1.5">
+              <button id="btn-load-sample" type="button" class="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold active:scale-95">過去7日サンプル読込</button>
+              <button id="btn-clear-sample" type="button" class="hidden px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold active:scale-95">サンプル削除</button>
+            </div>
+          </div>
+          <div id="hist-log-list" class="space-y-2.5"></div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 4: 食材・設定（レシート・体重目標・APIキー） ==================== -->
+      <section id="tab-settings" class="hidden space-y-3.5">
+        <!-- 1. レシート＆商品写真から手持ち食材取込 -->
+        <div class="bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700 text-white rounded-2xl p-4 shadow-md space-y-3">
+          <div>
+            <span class="inline-block px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-bold">レシート＆商品AI認識</span>
+            <h2 class="text-base font-extrabold mt-1">買い物レシート・食材を写真で取込</h2>
+            <p class="text-[11px] text-emerald-50/90 mt-0.5">食品のみ抽出します（レジ袋・税・日用品は自動除外）。</p>
+          </div>
+          <input id="in-rec-cam" type="file" accept="image/*" capture="environment" class="hidden" />
+          <input id="in-rec-lib" type="file" accept="image/*" class="hidden" />
+          <div class="grid grid-cols-2 gap-2.5">
+            <button id="btn-rec-cam" type="button" class="py-2.5 px-3 rounded-2xl bg-white text-emerald-800 font-extrabold text-xs shadow-sm active:scale-95 flex items-center justify-center gap-1.5"><span>📷</span><span>カメラで撮影</span></button>
+            <button id="btn-rec-lib" type="button" class="py-2.5 px-3 rounded-2xl bg-emerald-950/30 border border-white/25 text-white font-extrabold text-xs active:scale-95 flex items-center justify-center gap-1.5"><span>🖼️</span><span>写真から選択</span></button>
+          </div>
+          <div id="rec-loading" class="hidden rounded-xl bg-white/15 p-2.5 flex items-center gap-2.5">
+            <img id="rec-load-thumb" src="" alt="" class="w-11 h-11 rounded-lg object-cover border border-white/30 shrink-0" />
+            <p class="text-xs font-extrabold flex items-center gap-1.5"><span class="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-amber-300 rounded-full animate-spin"></span>AIが食品を抽出中...</p>
+          </div>
+          <div id="rec-err" class="hidden rounded-xl bg-rose-950/60 border border-rose-300/40 p-2.5 text-xs text-rose-100"></div>
+        </div>
+
+        <!-- 手持ち食材リスト -->
+        <div class="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-200/70 space-y-3">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <h3 class="text-sm font-extrabold text-slate-900">手持ちの食材</h3>
+              <p id="ing-sub" class="text-[11px] font-semibold text-slate-400">在庫 0品 / 計 0品</p>
+            </div>
+            <div class="flex gap-1.5">
+              <button id="btn-ing-del-used" type="button" class="px-2.5 py-1 rounded-xl bg-slate-100 text-slate-600 text-[10px] font-bold">使い切り削除</button>
+              <button id="btn-ing-clear" type="button" class="px-2.5 py-1 rounded-xl bg-rose-50 text-rose-600 text-[10px] font-bold">全削除</button>
+            </div>
+          </div>
+          <form id="form-add-ing" class="flex gap-1.5">
+            <input id="ing-in-name" type="text" required placeholder="食材名（例：鶏むね肉）" class="flex-1 min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs outline-none focus:bg-white focus:border-emerald-500" />
+            <input id="ing-in-qty" type="text" placeholder="量" class="w-16 shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2 text-xs outline-none" />
+            <select id="ing-in-cat" class="w-24 shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-1.5 py-2 text-[11px] font-bold text-slate-700">
+              <option value="肉・魚">肉・魚</option>
+              <option value="野菜・きのこ">野菜・きのこ</option>
+              <option value="卵・乳製品・大豆">卵・乳・大豆</option>
+              <option value="主食・麺">主食・麺</option>
+              <option value="調味料・その他">その他</option>
+            </select>
+            <button type="submit" class="px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-extrabold active:scale-95 shrink-0">追加</button>
+          </form>
+          <div id="ing-filters" class="flex gap-1.5 overflow-x-auto no-sb"></div>
+          <div id="ing-list" class="space-y-1.5 max-h-60 overflow-y-auto"></div>
+        </div>
+
+        <!-- 2. 体重・目標カロリー計算 -->
+        <div class="bg-gradient-to-br from-emerald-800 via-emerald-900 to-slate-900 text-white rounded-2xl p-4 shadow-md">
+          <div class="flex items-center justify-between">
+            <p class="text-xs font-bold text-emerald-300">1日の目安摂取カロリー</p>
+            <span id="prof-manual-tag" class="hidden px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 text-[10px] font-bold">手動指定中</span>
+          </div>
+          <div class="flex items-baseline gap-1.5 mt-1">
+            <span id="prof-tgt" class="text-3xl font-extrabold">2,000</span>
+            <span class="text-xs text-emerald-100/80">kcal / 日（夕食目安 約<span id="prof-dkcal">800</span>kcal）</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 mt-2.5 pt-2.5 border-t border-white/15 text-xs">
+            <div class="bg-white/10 rounded-xl p-2"><p class="text-[10px] text-emerald-100/80">基礎代謝 (BMR)</p><p class="font-extrabold"><span id="prof-bmr">1,600</span> kcal</p></div>
+            <div class="bg-white/10 rounded-xl p-2"><p class="text-[10px] text-emerald-100/80">総消費 (TDEE)</p><p class="font-extrabold"><span id="prof-tdee">2,400</span> kcal</p></div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/70 space-y-3">
+          <h3 class="text-sm font-extrabold text-slate-900">身体データ・目標設定</h3>
+          <div class="grid grid-cols-2 gap-2.5">
+            <div><label class="block text-[11px] font-bold text-slate-500 mb-1">体重 (kg)</label><input id="p-weight" type="number" step="0.1" inputmode="decimal" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-extrabold outline-none focus:bg-white focus:border-emerald-500" /></div>
+            <div><label class="block text-[11px] font-bold text-slate-500 mb-1">身長 (cm)</label><input id="p-height" type="number" step="0.1" inputmode="decimal" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-extrabold outline-none focus:bg-white focus:border-emerald-500" /></div>
+            <div><label class="block text-[11px] font-bold text-slate-500 mb-1">年齢 (歳)</label><input id="p-age" type="number" inputmode="numeric" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-extrabold outline-none focus:bg-white focus:border-emerald-500" /></div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-500 mb-1">性別</label>
+              <div class="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl h-[38px]">
+                <button type="button" data-g="male" class="g-btn rounded-lg text-xs font-extrabold">男性</button>
+                <button type="button" data-g="female" class="g-btn rounded-lg text-xs font-extrabold">女性</button>
+              </div>
+            </div>
+          </div>
+          <div class="grid grid-cols-3 gap-1.5">
+            <button type="button" data-act="low" class="act-btn py-2 px-1 rounded-xl border text-center text-[11px] font-bold">低い<br><span class="text-[9px] opacity-75">デスクワーク</span></button>
+            <button type="button" data-act="moderate" class="act-btn py-2 px-1 rounded-xl border text-center text-[11px] font-bold">普通<br><span class="text-[9px] opacity-75">週1-3運動</span></button>
+            <button type="button" data-act="high" class="act-btn py-2 px-1 rounded-xl border text-center text-[11px] font-bold">高い<br><span class="text-[9px] opacity-75">週4+運動</span></button>
+          </div>
+          <div class="grid grid-cols-3 gap-1.5">
+            <button type="button" data-goal="lose" class="goal-btn py-2 rounded-xl border text-center text-xs font-extrabold">減量<br><span class="text-[9px] opacity-75">-400kcal</span></button>
+            <button type="button" data-goal="maintain" class="goal-btn py-2 rounded-xl border text-center text-xs font-extrabold">現状維持<br><span class="text-[9px] opacity-75">±0kcal</span></button>
+            <button type="button" data-goal="gain" class="goal-btn py-2 rounded-xl border text-center text-xs font-extrabold">増量<br><span class="text-[9px] opacity-75">+300kcal</span></button>
+          </div>
+          <div class="pt-2 border-t border-slate-100 space-y-2.5">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-xs font-bold text-slate-800">目標カロリーを手動上書き</span>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input id="p-custom-on" type="checkbox" class="sr-only peer" />
+                <div class="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-emerald-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-4"></div>
+              </label>
+            </div>
+            <div id="p-custom-box" class="hidden flex items-center gap-2">
+              <input id="p-custom-val" type="number" inputmode="numeric" step="50" class="flex-1 rounded-xl border border-emerald-300 bg-emerald-50/40 px-3 py-2 text-sm font-extrabold outline-none" />
+              <span class="text-xs font-bold text-slate-500">kcal / 日</span>
+            </div>
+            <div class="space-y-1">
+              <div class="flex justify-between text-xs font-bold"><span class="text-slate-800">夕食カロリー配分</span><span class="text-emerald-700"><span id="p-ratio-val">40</span>%（約<span id="p-ratio-kcal">800</span>kcal）</span></div>
+              <input id="p-ratio-slider" type="range" min="30" max="50" step="5" value="40" class="w-full" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Gemini APIキー設定（iPhone Safari利用時も本番AIを有効化可能） -->
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/70 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-extrabold text-slate-900">🔑 Gemini APIキー設定</h3>
+            <span id="api-key-status" class="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">未設定（内蔵AIモード）</span>
+          </div>
+          <p class="text-[11px] text-slate-500 leading-relaxed">未設定でも写真解析・AI献立作成の推定シミュレーションが動作します。Google AI StudioのAPIキーを設定すると実画像マルチモーダル解析が有効になります。</p>
+          <div class="flex gap-2">
+            <input id="in-api-key" type="password" placeholder="AIzaSy..." class="flex-1 min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-mono outline-none focus:bg-white focus:border-emerald-500" />
+            <button id="btn-save-apikey" type="button" class="px-3.5 py-2 rounded-xl bg-slate-900 text-white text-xs font-extrabold active:scale-95 shrink-0">保存</button>
+          </div>
+        </div>
+
+        <!-- 4. データ管理 -->
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/70 space-y-2">
+          <h3 class="text-sm font-extrabold text-slate-900">データ管理</h3>
+          <button id="btn-reset-all" type="button" class="w-full py-2.5 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 text-xs font-extrabold active:scale-95">全データを初期化</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- 固定下部4タブナビゲーション -->
+    <nav class="fixed bottom-0 left-0 right-0 z-30 max-w-md mx-auto glass border-t border-slate-200/80 safe-pb px-2 pt-1.5">
+      <div class="grid grid-cols-4 gap-1">
+        <button type="button" data-tab="dinners" class="nav-btn flex flex-col items-center py-1.5 rounded-2xl text-emerald-600">
+          <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>
+          <span class="text-[10px] font-extrabold">夕食献立</span>
+        </button>
+        <button type="button" data-tab="meals" class="nav-btn flex flex-col items-center py-1.5 rounded-2xl text-slate-400">
+          <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"/><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z"/></svg>
+          <span class="text-[10px] font-extrabold">食事管理</span>
+        </button>
+        <button type="button" data-tab="history" class="nav-btn flex flex-col items-center py-1.5 rounded-2xl text-slate-400">
+          <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
+          <span class="text-[10px] font-extrabold">推移・履歴</span>
+        </button>
+        <button type="button" data-tab="settings" class="nav-btn relative flex flex-col items-center py-1.5 rounded-2xl text-slate-400">
+          <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"/></svg>
+          <span class="text-[10px] font-extrabold">食材・設定</span>
+          <span id="nav-badge" class="hidden absolute top-1 right-3 min-w-[16px] h-4 px-1 rounded-full bg-emerald-600 text-white text-[9px] font-extrabold flex items-center justify-center">0</span>
+        </button>
+      </div>
+    </nav>
+  </div>
+
+  <!-- モーダル1: AI夕食献立作成 -->
+  <div id="m-ai-din" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/50 backdrop-blur-[2px]">
+    <div class="w-full max-w-md max-h-[92vh] flex flex-col bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl sheet safe-pb overflow-hidden">
+      <div class="px-5 pt-4 pb-3 border-b border-slate-100 flex items-center justify-between">
+        <div><span class="text-[10px] font-extrabold text-emerald-600">AI DINNER PLANNER</span><h3 class="text-base font-extrabold">買った食材から夕食献立を作成</h3></div>
+        <button type="button" data-close="m-ai-din" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold">✕</button>
+      </div>
+      <div class="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        <div id="aid-form" class="space-y-3.5">
+          <div class="space-y-2">
+            <p class="text-xs font-extrabold text-slate-800">1. 作成する曜日（ON）／除く曜日（OFF）</p>
+            <div id="aid-days" class="grid grid-cols-7 gap-1.5"></div>
+            <div id="aid-day-msg" class="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-[11px] font-bold text-emerald-900"></div>
+          </div>
+          <div class="rounded-2xl bg-slate-50 border border-slate-200 p-3 space-y-2">
+            <div class="flex justify-between text-xs font-extrabold"><span>2. 優先食材（<span id="aid-ing-cnt">0</span>品）</span><div class="text-[11px] space-x-2"><button id="aid-ing-all" type="button" class="text-emerald-600">全選択</button><button id="aid-ing-none" type="button" class="text-slate-400">解除</button></div></div>
+            <div id="aid-ing-chips" class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto"></div>
+          </div>
+          <div class="flex items-center justify-between rounded-xl bg-emerald-50/60 border border-emerald-200/80 px-3 py-2.5">
+            <span class="text-xs font-extrabold text-slate-800">3. 夕食1食目安</span>
+            <div class="flex items-center gap-1">
+              <button id="aid-cal-m" type="button" class="w-7 h-7 rounded-lg bg-white border font-extrabold">-</button>
+              <input id="aid-cal" type="number" step="50" class="w-16 text-center rounded-lg border border-emerald-300 bg-white py-1 text-sm font-extrabold text-emerald-700" />
+              <button id="aid-cal-p" type="button" class="w-7 h-7 rounded-lg bg-white border font-extrabold">+</button>
+              <span class="text-[11px] font-bold text-slate-500">kcal</span>
+            </div>
+          </div>
+          <div class="space-y-2">
+            <p class="text-xs font-extrabold text-slate-800">4. 希望条件（任意）</p>
+            <div id="aid-conds" class="flex flex-wrap gap-1.5"></div>
+            <textarea id="aid-memo" rows="2" placeholder="例：葉物野菜を早めに使い切りたい" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs outline-none focus:bg-white focus:border-emerald-500"></textarea>
+          </div>
+          <div id="aid-err" class="hidden rounded-xl bg-rose-50 border border-rose-200 p-2.5 text-xs text-rose-700 font-semibold"></div>
+          <button id="btn-aid-run" type="button" class="w-full py-3.5 rounded-2xl bg-emerald-600 text-white font-extrabold text-sm shadow-md active:scale-[0.98] disabled:opacity-60">✨ AIに夕食献立をお願いする</button>
+        </div>
+        <div id="aid-prev" class="hidden space-y-3">
+          <div class="flex justify-between items-center"><span class="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-extrabold">AI提案プレビュー</span><button id="btn-aid-back" type="button" class="text-xs font-bold text-slate-500">条件に戻る</button></div>
+          <div id="aid-prev-cards" class="space-y-2.5"></div>
+          <button id="btn-aid-commit" type="button" class="w-full py-3.5 rounded-2xl bg-emerald-600 text-white font-extrabold text-sm">献立に反映する</button>
+          <button id="btn-aid-regen" type="button" class="w-full py-2.5 rounded-2xl bg-slate-100 text-slate-700 font-bold text-xs">🔄 同じ条件で再生成</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- モーダル2: 料理写真カロリー確認・保存 -->
+  <div id="m-dish-save" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/50 backdrop-blur-[2px]">
+    <div class="w-full max-w-md max-h-[92vh] flex flex-col bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl sheet safe-pb overflow-hidden">
+      <div class="px-5 pt-4 pb-3 border-b border-slate-100 flex items-center justify-between">
+        <h3 class="text-base font-extrabold">📷 写真カロリー解析結果</h3>
+        <button type="button" data-close="m-dish-save" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold">✕</button>
+      </div>
+      <form id="form-dish-save" class="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+        <div class="flex gap-3 items-start bg-emerald-50/70 border border-emerald-200 rounded-2xl p-3">
+          <img id="ds-thumb" src="" alt="" class="w-16 h-16 rounded-xl object-cover border border-emerald-200 shrink-0 bg-slate-100" />
+          <div class="min-w-0 flex-1 space-y-1">
+            <p id="ds-comment" class="text-[11px] font-bold text-emerald-900 leading-snug"></p>
+            <p id="ds-breakdown" class="text-[10px] text-slate-600 leading-relaxed"></p>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div><label class="block text-[11px] font-bold text-slate-500 mb-1">記録日</label><input id="ds-date" type="date" required class="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-extrabold" /></div>
+          <div><label class="block text-[11px] font-bold text-slate-500 mb-1">時間帯</label>
+            <select id="ds-timing" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-extrabold">
+              <option value="breakfast">朝食</option><option value="lunch">昼食</option><option value="dinner">夕食</option><option value="snack">間食・外食</option>
+            </select>
+          </div>
+        </div>
+        <div><label class="block text-[11px] font-bold text-slate-500 mb-1">料理名（編集可）</label><input id="ds-name" type="text" required class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold outline-none focus:bg-white focus:border-emerald-500" /></div>
+        <div class="grid grid-cols-4 gap-2">
+          <div><label class="block text-[10px] font-bold text-slate-500 mb-1">kcal</label><input id="ds-cal" type="number" required min="0" class="w-full rounded-xl border bg-slate-50 py-2 text-center text-sm font-extrabold" /></div>
+          <div><label class="block text-[10px] font-bold text-emerald-700 mb-1">P(g)</label><input id="ds-p" type="number" min="0" class="w-full rounded-xl border bg-slate-50 py-2 text-center text-sm font-extrabold" /></div>
+          <div><label class="block text-[10px] font-bold text-amber-700 mb-1">F(g)</label><input id="ds-f" type="number" min="0" class="w-full rounded-xl border bg-slate-50 py-2 text-center text-sm font-extrabold" /></div>
+          <div><label class="block text-[10px] font-bold text-sky-700 mb-1">C(g)</label><input id="ds-c" type="number" min="0" class="w-full rounded-xl border bg-slate-50 py-2 text-center text-sm font-extrabold" /></div>
+        </div>
+        <button type="submit" class="w-full py-3.5 rounded-2xl bg-emerald-600 text-white font-extrabold text-sm shadow-sm active:scale-[0.98]">この内容で記録する</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- モーダル3: 食事記録の手動/AI推定追加・編集 -->
+  <div id="m-log" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/50 backdrop-blur-[2px]">
+    <div class="w-full max-w-md max-h-[90vh] flex flex-col bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl sheet safe-pb overflow-hidden">
+      <div class="px-5 pt-4 pb-3 border-b border-slate-100 flex items-center justify-between">
+        <h3 id="mlog-title" class="text-base font-extrabold">食事を追加</h3>
+        <button type="button" data-close="m-log" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold">✕</button>
+      </div>
+      <form id="form-log" class="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+        <input type="hidden" id="lg-id" />
+        <div class="grid grid-cols-2 gap-2">
+          <div><label class="block text-[11px] font-bold text-slate-500 mb-1">日付</label><input id="lg-date" type="date" required class="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-extrabold" /></div>
+          <div><label class="block text-[11px] font-bold text-slate-500 mb-1">時間帯</label>
+            <select id="lg-timing" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-extrabold">
+              <option value="breakfast">朝食</option><option value="lunch">昼食</option><option value="dinner">夕食（追加）</option><option value="snack">間食・外食</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-slate-500 mb-1">料理名・量（例：ツナマヨおにぎり1個）</label>
+          <textarea id="lg-name" rows="2" required class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:bg-white focus:border-emerald-500"></textarea>
+          <button id="btn-lg-ai" type="button" class="mt-2 w-full py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-extrabold active:scale-95 disabled:opacity-60">✨ AIでカロリー・PFC推定</button>
+          <p id="lg-ai-note" class="hidden mt-1.5 text-[11px] text-emerald-700 bg-emerald-50 rounded-lg px-2.5 py-1"></p>
+        </div>
+        <div class="grid grid-cols-4 gap-2">
+          <div><label class="block text-[10px] font-bold text-slate-500 mb-1">kcal</label><input id="lg-cal" type="number" required min="0" class="w-full rounded-xl border bg-slate-50 py-2 text-center text-sm font-extrabold" /></div>
+          <div><label class="block text-[10px] font-bold text-emerald-700 mb-1">P(g)</label><input id="lg-p" type="number" min="0" class="w-full rounded-xl border bg-slate-50 py-2 text-center text-sm font-extrabold" /></div>
+          <div><label class="block text-[10px] font-bold text-amber-700 mb-1">F(g)</label><input id="lg-f" type="number" min="0" class="w-full rounded-xl border bg-slate-50 py-2 text-center text-sm font-extrabold" /></div>
+          <div><label class="block text-[10px] font-bold text-sky-700 mb-1">C(g)</label><input id="lg-c" type="number" min="0" class="w-full rounded-xl border bg-slate-50 py-2 text-center text-sm font-extrabold" /></div>
+        </div>
+        <label class="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/80"><span class="text-xs font-bold text-slate-700">食べた（摂取カロリーへ即時反映）</span><input id="lg-eaten" type="checkbox" checked class="w-5 h-5 accent-emerald-600" /></label>
+        <div class="flex gap-2">
+          <button id="btn-lg-del" type="button" class="hidden px-4 py-3 rounded-2xl bg-rose-50 text-rose-600 font-extrabold text-sm">削除</button>
+          <button type="submit" class="flex-1 py-3 rounded-2xl bg-emerald-600 text-white font-extrabold text-sm">保存する</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- モーダル4: 夕食手動編集 -->
+  <div id="m-din-edit" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/50 backdrop-blur-[2px]">
+    <div class="w-full max-w-md max-h-[90vh] flex flex-col bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl sheet safe-pb overflow-hidden">
+      <div class="px-5 pt-4 pb-3 border-b border-slate-100 flex items-center justify-between">
+        <h3 id="de-title" class="text-base font-extrabold">夕食を設定</h3>
+        <button type="button" data-close="m-din-edit" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold">✕</button>
+      </div>
+      <form id="form-din-edit" class="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+        <input type="hidden" id="de-day" />
+        <div>
+          <label class="block text-[11px] font-bold text-slate-500 mb-1">夕食メニュー名</label>
+          <input id="de-name" type="text" required class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold outline-none focus:bg-white focus:border-emerald-500" />
+          <button id="btn-de-ai" type="button" class="mt-2 w-full py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-extrabold active:scale-95 disabled:opacity-60">✨ AIでカロリー・PFC推定</button>
+        </div>
+        <div class="grid grid-cols-4 gap-2">
+          <div><label class="block text-[10px] font-bold text-slate-500 mb-1">kcal</label><input id="de-cal" type="number" required min="0" class="w-full rounded-xl border bg-slate-50 py-2 text-center text-sm font-extrabold" /></div>
+          <div><label class="block text-[10px] font-bold text-emerald-700 mb-1">P(g)</label><input id="de-p" type="number" min="0" class="w-full rounded-xl border bg-slate-50 py-2 text-center text-sm font-extrabold" /></div>
+          <div><label class="block text-[10px] font-bold text-amber-700 mb-1">F(g)</label><input id="de-f" type="number" min="0" class="w-full rounded-xl border bg-slate-50 py-2 text-center text-sm font-extrabold" /></div>
+          <div><label class="block text-[10px] font-bold text-sky-700 mb-1">C(g)</label><input id="de-c" type="number" min="0" class="w-full rounded-xl border bg-slate-50 py-2 text-center text-sm font-extrabold" /></div>
+        </div>
+        <div><label class="block text-[11px] font-bold text-slate-500 mb-1">使用食材（カンマ区切り）</label><input id="de-ings" type="text" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs" /></div>
+        <div><label class="block text-[11px] font-bold text-slate-500 mb-1">調理メモ</label><textarea id="de-memo" rows="2" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs"></textarea></div>
+        <div class="flex gap-2">
+          <button id="btn-de-del" type="button" class="hidden px-4 py-3 rounded-2xl bg-rose-50 text-rose-600 font-extrabold text-sm">削除</button>
+          <button type="submit" class="flex-1 py-3 rounded-2xl bg-emerald-600 text-white font-extrabold text-sm">保存する</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- モーダル5: レシート抽出結果確認 -->
+  <div id="m-rec-rev" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/50 backdrop-blur-[2px]">
+    <div class="w-full max-w-md max-h-[90vh] flex flex-col bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl sheet safe-pb overflow-hidden">
+      <div class="px-5 pt-4 pb-3 border-b border-slate-100 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <img id="rr-thumb" src="" alt="" class="w-10 h-10 rounded-xl object-cover border shrink-0" />
+          <div><p class="text-[10px] font-extrabold text-emerald-600">抽出結果の確認</p><h3 class="text-sm font-extrabold"><span id="rr-cnt">0</span>品を選択中</h3></div>
+        </div>
+        <button type="button" data-close="m-rec-rev" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold">✕</button>
+      </div>
+      <div id="rr-list" class="flex-1 overflow-y-auto px-4 py-3 space-y-2"></div>
+      <div class="px-4 pt-2 pb-3 border-t border-slate-100 flex gap-2">
+        <button id="btn-rr-add" type="button" class="px-3 py-3 rounded-2xl bg-slate-100 text-slate-700 text-xs font-extrabold">＋行追加</button>
+        <button id="btn-rr-commit" type="button" class="flex-1 py-3 rounded-2xl bg-emerald-600 text-white text-sm font-extrabold">手持ち食材に登録</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- モーダル6: 外部レシピ検索 -->
+  <div id="m-recipe" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/50 backdrop-blur-[2px]">
+    <div class="w-full max-w-md max-h-[90vh] flex flex-col bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl sheet safe-pb overflow-hidden">
+      <div class="px-5 pt-4 pb-3 border-b border-slate-100 flex items-center justify-between">
+        <h3 class="text-base font-extrabold">🔍 レシピサイト検索＆夕食登録</h3>
+        <button type="button" data-close="m-recipe" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold">✕</button>
+      </div>
+      <div class="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        <div class="space-y-2.5">
+          <div class="flex gap-2">
+            <input id="rs-kw" type="text" placeholder="食材・料理名を入力" class="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none" />
+            <button id="btn-rs-clr" type="button" class="px-3 rounded-xl bg-slate-100 text-xs font-bold text-slate-500">クリア</button>
+          </div>
+          <div id="rs-chips" class="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto"></div>
+          <div class="grid grid-cols-3 gap-2">
+            <button type="button" data-site="cookpad" class="rs-site py-2.5 px-2 rounded-xl bg-orange-50 text-orange-800 border border-orange-200 text-xs font-extrabold">クックパッド ↗</button>
+            <button type="button" data-site="kurashiru" class="rs-site py-2.5 px-2 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-extrabold">クラシル ↗</button>
+            <button type="button" data-site="delish" class="rs-site py-2.5 px-2 rounded-xl bg-yellow-50 text-yellow-800 border border-yellow-200 text-xs font-extrabold">デリッシュ ↗</button>
+          </div>
+        </div>
+        <form id="form-rs-reg" class="pt-3 border-t border-slate-100 space-y-2.5">
+          <p class="text-xs font-extrabold text-slate-800">見つけた料理を夕食に登録</p>
+          <div class="grid grid-cols-3 gap-2">
+            <select id="rs-day" class="col-span-1 rounded-xl border bg-slate-50 px-2 py-2 text-xs font-extrabold"><option value="mon">月曜</option><option value="tue">火曜</option><option value="wed">水曜</option><option value="thu">木曜</option><option value="fri">金曜</option><option value="sat">土曜</option><option value="sun">日曜</option></select>
+            <input id="rs-name" type="text" required placeholder="料理名" class="col-span-2 rounded-xl border bg-slate-50 px-3 py-2 text-sm" />
+          </div>
+          <button id="btn-rs-ai" type="button" class="w-full py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-extrabold disabled:opacity-60">✨ AIでカロリー・PFC推定</button>
+          <div class="grid grid-cols-4 gap-2">
+            <input id="rs-cal" type="number" required min="0" placeholder="kcal" class="rounded-xl border bg-slate-50 py-2 text-center text-xs font-extrabold" />
+            <input id="rs-p" type="number" min="0" placeholder="P(g)" class="rounded-xl border bg-slate-50 py-2 text-center text-xs font-extrabold" />
+            <input id="rs-f" type="number" min="0" placeholder="F(g)" class="rounded-xl border bg-slate-50 py-2 text-center text-xs font-extrabold" />
+            <input id="rs-c" type="number" min="0" placeholder="C(g)" class="rounded-xl border bg-slate-50 py-2 text-center text-xs font-extrabold" />
+          </div>
+          <button type="submit" class="w-full py-3 rounded-2xl bg-slate-900 text-white font-extrabold text-sm">夕食献立に登録</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- モーダル7: カスタム確認ダイアログ -->
+  <div id="m-confirm" class="hidden fixed inset-0 z-50 flex items-center justify-center px-6 bg-slate-900/50 backdrop-blur-[2px]">
+    <div class="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl text-center space-y-3">
+      <h3 id="cf-title" class="text-base font-extrabold text-slate-900">確認</h3>
+      <p id="cf-msg" class="text-xs text-slate-600 leading-relaxed"></p>
+      <div class="grid grid-cols-2 gap-2 pt-1">
+        <button id="cf-cancel" type="button" class="py-2.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold">キャンセル</button>
+        <button id="cf-ok" type="button" class="py-2.5 rounded-xl bg-rose-600 text-white text-xs font-extrabold">実行</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- トースト通知 -->
+  <div id="toast" class="pointer-events-none fixed top-16 left-1/2 -translate-x-1/2 z-50 opacity-0 transition-all duration-300 -translate-y-2 max-w-[92vw]">
+    <div class="px-4 py-2 rounded-full bg-slate-900/95 text-white text-xs font-bold shadow-lg"><span id="toast-txt"></span></div>
+  </div>
+
+<script>
+(() => {
+  // ===== 定数・ユーティリティ =====
+  const KEY = 'meal_app_v7_state';
+  const API_KEY_STORAGE = 'gemini_api_key';
+  const DAYS = [
+    { k:'mon', s:'月', f:'月曜日' }, { k:'tue', s:'火', f:'火曜日' }, { k:'wed', s:'水', f:'水曜日' },
+    { k:'thu', s:'木', f:'木曜日' }, { k:'fri', s:'金', f:'金曜日' }, { k:'sat', s:'土', f:'土曜日' }, { k:'sun', s:'日', f:'日曜日' }
+  ];
+  const TIMINGS = [
+    { k:'breakfast', l:'朝食', ic:'🌅', bg:'bg-amber-50' },
+    { k:'lunch', l:'昼食', ic:'☀️', bg:'bg-sky-50' },
+    { k:'dinner', l:'夕食', ic:'🌙', bg:'bg-emerald-50' },
+    { k:'snack', l:'間食・外食', ic:'☕', bg:'bg-orange-50' }
+  ];
+  const CATS = ['肉・魚', '野菜・きのこ', '卵・乳製品・大豆', '主食・麺', '調味料・その他'];
+  const CONDS = ['20分以内', '和食多め', '高タンパク', '作り置き活用', '洗い物少なめ', '低脂質'];
+
+  const $ = id => document.getElementById(id);
+  const uid = (p='id') => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`;
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+
+  // ローカル日付ヘルパー（JST準拠）
+  function fmtDate(d) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  function parseDate(str) {
+    const [y,m,d] = str.split('-').map(Number);
+    return new Date(y, (m||1)-1, d||1);
+  }
+  function addDays(str, delta) {
+    const d = parseDate(str);
+    d.setDate(d.getDate() + delta);
+    return fmtDate(d);
+  }
+  function dayKeyOf(dateStr) {
+    return ['sun','mon','tue','wed','thu','fri','sat'][parseDate(dateStr).getDay()];
+  }
+  function getWeekDates(anchorStr) {
+    const d = parseDate(anchorStr);
+    const diffToMon = (d.getDay() + 6) % 7;
+    d.setDate(d.getDate() - diffToMon);
+    return DAYS.map((obj, i) => {
+      const cur = new Date(d); cur.setDate(d.getDate() + i);
+      return { ...obj, date: fmtDate(cur) };
+    });
+  }
+  const TODAY = fmtDate(new Date());
+
+  // ===== 永続化ステート =====
+  const defaultProfile = () => ({ weight:65, height:170, age:30, gender:'male', activity:'moderate', goal:'maintain', useCustom:false, customCal:2000, dinnerRatio:40 });
+  const emptyDinners = () => Object.fromEntries(DAYS.map(d => [d.k, { status:'empty', item:null }]));
+
+  function loadData() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) {
+        const p = JSON.parse(raw);
+        return {
+          profile: { ...defaultProfile(), ...(p.profile||{}) },
+          dinners: { ...emptyDinners(), ...(p.dinners||{}) },
+          logsByDate: p.logsByDate || {},
+          ingredients: Array.isArray(p.ingredients) ? p.ingredients : [],
+          weightHistory: Array.isArray(p.weightHistory) ? p.weightHistory : []
+        };
+      }
+    } catch {}
+    return { profile:defaultProfile(), dinners:emptyDinners(), logsByDate:{}, ingredients:[], weightHistory:[] };
+  }
+
+  const data = loadData();
+  const ui = {
+    tab: 'dinners',
+    selectedDate: TODAY,
+    histPeriod: 7,
+    histFocusDate: TODAY,
+    expandedHist: new Set(),
+    ingFilter: 'すべて',
+    regenDay: null,
+    dishDraftThumb: '',
+    recReview: { thumb:'', items:[] },
+    aiModal: { inc:new Set(DAYS.map(d=>d.k)), ings:new Set(), cal:800, conds:new Set(), preview:null }
+  };
+
+  function getApiKey() {
+    try { return (localStorage.getItem(API_KEY_STORAGE) || '').trim(); } catch { return ''; }
+  }
+
+  function saveData() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(data));
+    } catch {
+      const dates = Object.keys(data.logsByDate).sort();
+      for (const dt of dates) {
+        (data.logsByDate[dt]?.items || []).forEach(it => { if (it.thumb) delete it.thumb; });
+        try { localStorage.setItem(KEY, JSON.stringify(data)); toast('容量節約のため古い写真サムネイルを整理しました'); return; } catch {}
+      }
+      toast('保存容量の上限です');
+    }
+  }
+
+  // ===== 栄養計算＆日別データ取得 =====
+  function calcMetrics() {
+    const p = data.profile;
+    const w = Math.max(20, Number(p.weight)||60), h = Math.max(100, Number(p.height)||170), a = Math.max(10, Number(p.age)||30);
+    const ratio = Math.min(50, Math.max(30, Number(p.dinnerRatio)||40));
+    const bmr = Math.round(10*w + 6.25*h - 5*a + (p.gender==='male' ? 5 : -161));
+    const mult = { low:1.2, moderate:1.55, high:1.725 }[p.activity] || 1.55;
+    const tdee = Math.round(bmr * mult);
+    const off = { lose:-400, maintain:0, gain:300 }[p.goal] || 0;
+    const autoTgt = Math.max(1200, tdee + off);
+    const target = p.useCustom ? Math.max(800, Math.round(Number(p.customCal)||autoTgt)) : autoTgt;
+    return {
+      bmr, tdee, autoTgt, target, ratio,
+      dinnerTarget: Math.max(300, Math.round((target * ratio / 100) / 10) * 10),
+      pG: Math.round(target * 0.25 / 4),
+      fG: Math.round(target * 0.25 / 9),
+      cG: Math.round(target * 0.50 / 4)
+    };
+  }
+
+  function ensureDateLog(dateStr) {
+    if (!data.logsByDate[dateStr]) data.logsByDate[dateStr] = { items:[], linkedDinner:null };
+    return data.logsByDate[dateStr];
+  }
+
+  function getDayRecord(dateStr) {
+    const log = data.logsByDate[dateStr] || { items:[], linkedDinner:null };
+    const dk = dayKeyOf(dateStr);
+    const planEntry = data.dinners[dk];
+    const inCurrentWeek = getWeekDates(TODAY).some(w => w.date === dateStr);
+    const linked = log.linkedDinner || (inCurrentWeek && planEntry?.status==='planned' && planEntry.item ? { ...planEntry.item, isEaten:false, live:true } : null);
+
+    let planned = 0, eaten = 0, p = 0, f = 0, c = 0;
+    const eatenNames = [];
+    if (linked) {
+      planned += Number(linked.calories)||0;
+      if (linked.isEaten) {
+        eaten += Number(linked.calories)||0; p += Number(linked.protein)||0; f += Number(linked.fat)||0; c += Number(linked.carbs)||0;
+        eatenNames.push({ name:linked.name, calories:linked.calories, timing:'夕食(献立)', thumb:null });
+      }
+    }
+    (log.items || []).forEach(it => {
+      planned += Number(it.calories)||0;
+      if (it.isEaten) {
+        eaten += Number(it.calories)||0; p += Number(it.protein)||0; f += Number(it.fat)||0; c += Number(it.carbs)||0;
+        const tl = TIMINGS.find(t=>t.k===it.timing)?.l || '';
+        eatenNames.push({ name:it.name, calories:it.calories, timing:tl, thumb:it.thumb||null });
+      }
+    });
+    return { log, linked, planEntry, planned:Math.round(planned), eaten:Math.round(eaten), p:Math.round(p), f:Math.round(f), c:Math.round(c), eatenNames };
+  }
+
+  // ===== Canvas画像リサイズ（最大800px / JPEG 0.75） =====
+  function resizeImg(file, maxEdge=800, quality=0.75) {
+    return new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onerror = () => rej(new Error('画像読み込みに失敗しました'));
+      fr.onload = () => {
+        const img = new Image();
+        img.onerror = () => rej(new Error('画像形式に対応していません'));
+        img.onload = () => {
+          const mk = (edge, q) => {
+            let w = img.width, h = img.height;
+            if (w > edge || h > edge) {
+              if (w >= h) { h = Math.round(h*edge/w); w = edge; } else { w = Math.round(w*edge/h); h = edge; }
+            }
+            const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+            const ctx = cv.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h); ctx.drawImage(img,0,0,w,h);
+            return cv.toDataURL('image/jpeg', q);
+          };
+          const mainUrl = mk(maxEdge, quality);
+          const thumbUrl = mk(128, 0.55);
+          res({ base64: mainUrl.split(',')[1], dataUrl: mainUrl, thumbUrl, fileName: file.name || '' });
+        };
+        img.src = fr.result;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+
+  // ===== Gemini REST API 呼び出し ＆ オフライン・スマート推定フォールバック =====
+  function parseJSONSafe(txt) {
+    if (!txt) throw new Error('AI応答が空です');
+    let s = txt.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/i,'').trim();
+    try { return JSON.parse(s); } catch {
+      const a = s.indexOf('['), o = s.indexOf('{');
+      const st = (a !== -1 && (o === -1 || a < o)) ? a : o;
+      const en = (st === a) ? s.lastIndexOf(']') : s.lastIndexOf('}');
+      if (st !== -1 && en > st) return JSON.parse(s.slice(st, en+1));
+      throw new Error('JSON解析失敗');
+    }
+  }
+
+  async function callGeminiREST(parts, sys, schema) {
+    const key = getApiKey();
+    if (!key) return null;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`;
+    const body = JSON.stringify({
+      contents: [{ role:'user', parts }],
+      systemInstruction: { parts:[{ text:sys }] },
+      generationConfig: { responseMimeType:'application/json', ...(schema ? { responseSchema:schema } : {}) }
+    });
+    const delays = [1000, 2000];
+    let lastErr;
+    for (let i = 0; i <= delays.length; i++) {
+      try {
+        const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body });
+        if (!r.ok) throw new Error(`APIエラー(${r.status})`);
+        const j = await r.json();
+        const t = j?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!t) throw new Error('応答が空でした');
+        return parseJSONSafe(t);
+      } catch (e) {
+        lastErr = e;
+        if (i < delays.length) await new Promise(r => setTimeout(r, delays[i]));
+      }
+    }
+    throw lastErr;
+  }
+
+  // 料理写真解析（Gemini API優先＋未設定時フォールバック）
+  async function analyzeDishPhoto(base64) {
+    const sys = 'あなたは日本の管理栄養士です。料理の写真から料理名、内訳（各品名と概算kcal）、合計のおおよそのカロリー(整数kcal)、protein/fat/carbs(整数g)、短い栄養コメント(30文字以内)をJSONで返してください。料理でない場合はcaloriesを0、nameを空文字にしてください。';
+    const schema = { type:'OBJECT', properties:{ name:{type:'STRING'}, breakdown:{type:'STRING'}, calories:{type:'INTEGER'}, protein:{type:'INTEGER'}, fat:{type:'INTEGER'}, carbs:{type:'INTEGER'}, comment:{type:'STRING'} }, required:['name','breakdown','calories','protein','fat','carbs','comment'] };
+    const apiRes = await callGeminiREST([{ text:'この料理写真のおおよそのカロリーとPFCを算出してください。' }, { inlineData:{ mimeType:'image/jpeg', data:base64 } }], sys, schema);
+    if (apiRes) return apiRes;
+
+    // APIキー未設定時のスマート推定フォールバック
+    await new Promise(r => setTimeout(r, 550));
+    const hr = new Date().getHours();
+    const presets = hr < 10
+      ? [{ name:'トースト＆目玉焼き・サラダセット', breakdown:'食パン1枚(160kcal) + 目玉焼き(90kcal) + サラダ・ヨーグルト(130kcal)', calories:380, protein:18, fat:14, carbs:45, comment:'朝のエネルギー補給にバランスの良い組み合わせです' }]
+      : hr < 15
+      ? [{ name:'鶏むね肉の定食ランチ（ご飯・味噌汁付）', breakdown:'主菜(260kcal) + ご飯1杯(250kcal) + 味噌汁・小鉢(110kcal)', calories:620, protein:34, fat:15, carbs:82, comment:'高タンパクで午後の活動にぴったりな昼食です' }]
+      : [{ name:'焼き魚と副菜の和食ごはんセット', breakdown:'焼き魚(240kcal) + ご飯(230kcal) + 副菜・汁物(140kcal)', calories:610, protein:32, fat:18, carbs:76, comment:'脂質控えめで消化に優しい夕食バランスです' }];
+    return { ...presets[0], comment: `【標準推定】${presets[0].comment}（APIキー設定で実画像解析に対応）` };
+  }
+
+  // レシート写真解析（Gemini API優先＋未設定時フォールバック）
+  async function extractReceiptPhoto(base64) {
+    const sys = 'あなたは日本の食材管理AIです。レシートや購入商品の写真から食品・食材のみ抽出し、レジ袋・税・合計・日用品は除外し、name, quantity(例:1パック), category(「肉・魚」「野菜・きのこ」「卵・乳製品・大豆」「主食・麺」「調味料・その他」)のJSON配列で返してください。';
+    const schema = { type:'ARRAY', items:{ type:'OBJECT', properties:{ name:{type:'STRING'}, quantity:{type:'STRING'}, category:{type:'STRING'} }, required:['name','quantity','category'] } };
+    const raw = await callGeminiREST([{ text:'写真から食品のみ抽出してください。' }, { inlineData:{ mimeType:'image/jpeg', data:base64 } }], sys, schema);
+    if (raw) {
+      return (Array.isArray(raw) ? raw : []).filter(x => x?.name?.trim()).map(x => ({
+        checked:true, name:x.name.trim(), quantity:(x.quantity||'1個').trim(), category:CATS.includes(x.category)?x.category:'調味料・その他'
+      }));
+    }
+    await new Promise(r => setTimeout(r, 500));
+    return [
+      { checked:true, name:'鶏むね肉', quantity:'2枚', category:'肉・魚' },
+      { checked:true, name:'豚こま切れ肉', quantity:'300g', category:'肉・魚' },
+      { checked:true, name:'鮭切り身', quantity:'2切れ', category:'肉・魚' },
+      { checked:true, name:'キャベツ', quantity:'1/2玉', category:'野菜・きのこ' },
+      { checked:true, name:'玉ねぎ', quantity:'3個', category:'野菜・きのこ' },
+      { checked:true, name:'しめじ', quantity:'1パック', category:'野菜・きのこ' },
+      { checked:true, name:'木綿豆腐', quantity:'1丁', category:'卵・乳製品・大豆' },
+      { checked:true, name:'卵', quantity:'1パック', category:'卵・乳製品・大豆' }
+    ];
+  }
+
+  // AI夕食献立生成（Gemini API優先＋未設定時スマート献立ビルダー）
+  async function generateDinners({ dayKeys, ings, dinnerTarget, conds, avoid=[] }) {
+    const dmap = Object.fromEntries(DAYS.map(d=>[d.k, d.f]));
+    const sys = 'あなたは日本の管理栄養士です。手持ち食材を優先活用し、指定された曜日(dayKey)分だけの夕食セット（主菜＋主食・副菜）をJSONで出力してください。';
+    const prompt = `作成曜日: ${dayKeys.map(k=>`${dmap[k]}(dayKey:"${k}")`).join('、')}\n夕食1食目安: 約${dinnerTarget}kcal\n手持ち食材: ${ings.length ? ings.map(i=>`${i.name}${i.quantity?`(${i.quantity})`:''}`).join('、') : '定番食材'}\n条件: ${conds||'作りやすい家庭料理'}${avoid.length ? `\n除外メニュー: ${avoid.join('、')}` : ''}`;
+    const schema = {
+      type:'OBJECT',
+      properties:{ dinners:{ type:'ARRAY', items:{ type:'OBJECT', properties:{ dayKey:{type:'STRING'}, name:{type:'STRING'}, calories:{type:'INTEGER'}, protein:{type:'INTEGER'}, fat:{type:'INTEGER'}, carbs:{type:'INTEGER'}, usedIngredients:{type:'ARRAY',items:{type:'STRING'}}, memo:{type:'STRING'} }, required:['dayKey','name','calories','protein','fat','carbs','usedIngredients','memo'] } } },
+      required:['dinners']
+    };
+    const raw = await callGeminiREST([{ text:prompt }], sys, schema);
+    if (raw?.dinners?.length) {
+      const out = {};
+      raw.dinners.forEach((d, idx) => {
+        let dk = String(d.dayKey||'').toLowerCase().trim();
+        if (!dayKeys.includes(dk)) dk = dayKeys[idx];
+        if (!dk) return;
+        out[dk] = {
+          id:uid('din'), name:(d.name||'おすすめ夕食').trim(),
+          calories:Math.max(0, Math.round(Number(d.calories)||dinnerTarget)),
+          protein:Math.max(0, Math.round(Number(d.protein)||0)),
+          fat:Math.max(0, Math.round(Number(d.fat)||0)),
+          carbs:Math.max(0, Math.round(Number(d.carbs)||0)),
+          usedIngredients:Array.isArray(d.usedIngredients) ? d.usedIngredients.filter(Boolean) : [],
+          memo:(d.memo||'').trim()
+        };
+      });
+      if (Object.keys(out).length) return out;
+    }
+
+    // APIキー未設定時のスマート自動編成（手持ち食材を反映＆目標kcalへ自動スケーリング）
+    await new Promise(r => setTimeout(r, 450));
+    const scale = dinnerTarget / 700;
+    const pool = [
+      { base:'鶏むね肉と野菜の照り焼き定食（ご飯・味噌汁）', kw:['鶏'], kcal:680, p:42, f:16, c:86, u:['鶏むね肉','キャベツ','玉ねぎ'], memo:'鶏肉に片栗粉をまぶすと柔らかく仕上がります' },
+      { base:'豚こまとキャベツの生姜焼き・冷奴・ご飯', kw:['豚'], kcal:720, p:34, f:24, c:88, u:['豚こま切れ肉','キャベツ','木綿豆腐'], memo:'フライパンひとつで15分で完成する定番メニュー' },
+      { base:'鮭の塩焼きと具だくさんきのこ味噌汁・雑穀ご飯', kw:['鮭','魚'], kcal:640, p:36, f:18, c:80, u:['鮭切り身','しめじ','豆腐'], memo:'きのこたっぷりで食物繊維と満足感をプラス' },
+      { base:'親子丼（ふんわり卵とじ）＆わかめスープ', kw:['卵','鶏'], kcal:710, p:38, f:19, c:92, u:['鶏むね肉','卵','玉ねぎ'], memo:'半熟卵で仕上げると口当たり良く食べられます' },
+      { base:'豚しゃぶと温野菜のポン酢だれ・ご飯', kw:['豚','野菜'], kcal:650, p:33, f:17, c:85, u:['豚こま切れ肉','キャベツ','しめじ'], memo:'油を使わず茹でるので脂質を抑えられます' },
+      { base:'豆腐とひき肉の和風あんかけ丼＆お浸し', kw:['豆腐'], kcal:670, p:31, f:18, c:90, u:['木綿豆腐','しめじ','卵'], memo:'かさまし豆腐でヘルシーかつボリューム満点' },
+      { base:'サバの味噌煮定食（副菜2品・ご飯）', kw:['魚'], kcal:730, p:35, f:26, c:84, u:['サバ','玉ねぎ','豆腐'], memo:'DHA・EPAが豊富で栄養バランスの良い和定食' }
+    ];
+    const ingNames = ings.map(i => i.name);
+    const sorted = pool
+      .filter(p => !avoid.includes(p.base))
+      .sort((a,b) => {
+        const hitA = ingNames.filter(n => a.kw.some(k => n.includes(k)) || a.u.some(u => n.includes(u) || u.includes(n))).length;
+        const hitB = ingNames.filter(n => b.kw.some(k => n.includes(k)) || b.u.some(u => n.includes(u) || u.includes(n))).length;
+        return hitB - hitA;
+      });
+    const out = {};
+    dayKeys.forEach((dk, i) => {
+      const pick = sorted[i % sorted.length] || pool[i % pool.length];
+      const matched = ingNames.filter(n => pick.u.some(u => n.includes(u) || u.includes(n)));
+      out[dk] = {
+        id:uid('din'), name:pick.base,
+        calories:Math.round((pick.kcal * scale) / 10) * 10,
+        protein:Math.round(pick.p * scale),
+        fat:Math.round(pick.f * scale),
+        carbs:Math.round(pick.c * scale),
+        usedIngredients: matched.length ? matched : pick.u,
+        memo: pick.memo
+      };
+    });
+    return out;
+  }
+
+  // テキストからの栄養推定
+  async function estimateMealText(text) {
+    const sys = '日本の管理栄養士として、入力された食事内容の推定カロリー(整数kcal)、protein/fat/carbs(整数g)、主な食材(usedIngredients)、コメント(25文字以内)をJSONで返してください。';
+    const schema = { type:'OBJECT', properties:{ calories:{type:'INTEGER'}, protein:{type:'INTEGER'}, fat:{type:'INTEGER'}, carbs:{type:'INTEGER'}, usedIngredients:{type:'ARRAY',items:{type:'STRING'}}, comment:{type:'STRING'} }, required:['calories','protein','fat','carbs','usedIngredients','comment'] };
+    const apiRes = await callGeminiREST([{ text:`次を推定：${text}` }], sys, schema);
+    if (apiRes) return apiRes;
+
+    await new Promise(r => setTimeout(r, 300));
+    const dict = [
+      { k:/おにぎり|おむすび/, cal:190, p:4, f:2, c:39 },
+      { k:/サラダチキン|鶏むね/, cal:130, p:25, f:2, c:1 },
+      { k:/ラーメン|麺|うどん|パスタ/, cal:580, p:20, f:16, c:84 },
+      { k:/カレー|丼|オムライス/, cal:720, p:22, f:22, c:104 },
+      { k:/定食|弁当|ハンバーグ/, cal:690, p:28, f:24, c:86 },
+      { k:/パン|トースト|サンド/, cal:280, p:9, f:10, c:38 },
+      { k:/ヨーグルト|プロテイン|卵/, cal:120, p:12, f:4, c:8 },
+      { k:/ケーキ|チョコ|スイーツ|アイス/, cal:260, p:3, f:14, c:31 }
+    ];
+    const hit = dict.find(d => d.k.test(text)) || { cal:350, p:14, f:12, c:44 };
+    return { calories:hit.cal, protein:hit.p, fat:hit.f, carbs:hit.c, usedIngredients:[], comment:'標準データベースから概算しました' };
+  }
+
+  // ===== UIヘルパー =====
+  let toastT;
+  function toast(msg) {
+    $('toast-txt').textContent = msg;
+    const el = $('toast'); el.classList.remove('opacity-0','-translate-y-2'); el.classList.add('opacity-100','translate-y-0');
+    clearTimeout(toastT); toastT = setTimeout(() => { el.classList.add('opacity-0','-translate-y-2'); el.classList.remove('opacity-100','translate-y-0'); }, 2500);
+  }
+  let cfCb = null;
+  function askConfirm(title, msg, okTxt, cb) {
+    $('cf-title').textContent = title; $('cf-msg').textContent = msg; $('cf-ok').textContent = okTxt; cfCb = cb;
+    $('m-confirm').classList.remove('hidden');
+  }
+  function closeModal(id) { $(id).classList.add('hidden'); }
+
+  function switchTab(t) {
+    ui.tab = t;
+    const m = {
+      dinners:['夕食献立（月〜日）','WEEKLY DINNER PLAN'],
+      meals:['食事管理＆写真AI','MON-SUN TRACKER'],
+      history:['推移・履歴データ','CALORIE & WEIGHT TRENDS'],
+      settings:['食材・目標・設定','GROCERY & SETTINGS']
+    };
+    $('hdr-title').textContent = m[t][0]; $('hdr-sub').textContent = m[t][1];
+    ['dinners','meals','history','settings'].forEach(k => $(`tab-${k}`).classList.toggle('hidden', k !== t));
+    document.querySelectorAll('.nav-btn').forEach(b => {
+      const a = b.dataset.tab === t;
+      b.classList.toggle('text-emerald-600', a); b.classList.toggle('text-slate-400', !a);
+    });
+    window.scrollTo({ top:0, behavior:'smooth' });
+  }
+
+  function renderAll() {
+    const hasKey = !!getApiKey();
+    $('hdr-ai-mode').textContent = hasKey ? 'Gemini連携中' : '標準AIモード';
+    $('hdr-ai-mode').className = `px-2 py-1 rounded-full text-[10px] font-extrabold ${hasKey ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}`;
+
+    const unused = data.ingredients.filter(i => !i.used).length;
+    $('hdr-stock-cnt').textContent = unused;
+    $('nav-badge').textContent = unused > 99 ? '99+' : unused;
+    $('nav-badge').classList.toggle('hidden', unused === 0);
+
+    renderDinners();
+    renderMeals();
+    renderHistory();
+    renderSettings();
+    saveData();
+  }
+
+  // ===== TAB 1 描画: 夕食献立（月〜日） =====
+  function renderDinners() {
+    const met = calcMetrics();
+    $('din-hdr-target').textContent = met.dinnerTarget.toLocaleString();
+    const wk = getWeekDates(TODAY);
+    let planCnt = 0, excCnt = 0;
+    DAYS.forEach(d => {
+      if (data.dinners[d.k]?.status === 'planned' && data.dinners[d.k].item) planCnt++;
+      if (data.dinners[d.k]?.status === 'excluded') excCnt++;
+    });
+    $('din-hdr-stat').textContent = excCnt ? `${planCnt}日作成・${excCnt}日除外` : `${planCnt}/7日`;
+
+    $('dinner-list').innerHTML = wk.map(d => {
+      const ent = data.dinners[d.k] || { status:'empty', item:null };
+      const eatenThisWeek = !!data.logsByDate[d.date]?.linkedDinner?.isEaten;
+      const isToday = d.date === TODAY;
+      const loading = ui.regenDay === d.k;
+      let body = '';
+      if (ent.status === 'planned' && ent.item) {
+        const it = ent.item;
+        body = `
+          <div class="pt-2.5 space-y-2">
+            <div class="flex items-start justify-between gap-2">
+              <h4 class="text-sm font-extrabold text-slate-900 flex-1">${esc(it.name)}</h4>
+              <span class="shrink-0 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-extrabold">${(it.calories||0).toLocaleString()} kcal</span>
+            </div>
+            <div class="flex flex-wrap gap-1.5 items-center text-[10px] font-bold">
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800">P ${it.protein||0}g</span>
+              <span class="px-2 py-0.5 rounded bg-amber-50 text-amber-800">F ${it.fat||0}g</span>
+              <span class="px-2 py-0.5 rounded bg-sky-50 text-sky-800">C ${it.carbs||0}g</span>
+              ${eatenThisWeek ? '<span class="px-2 py-0.5 rounded bg-emerald-600 text-white">✓ 摂取済</span>' : ''}
+            </div>
+            ${(it.usedIngredients||[]).length ? `<div class="flex flex-wrap gap-1">${it.usedIngredients.slice(0,6).map(u=>`<span class="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-semibold">${esc(u)}</span>`).join('')}</div>` : ''}
+            ${it.memo ? `<p class="p-2 rounded-xl bg-slate-50 text-[11px] text-slate-600">📝 ${esc(it.memo)}</p>` : ''}
+            <div class="flex flex-wrap justify-end gap-1.5 pt-2 border-t border-slate-100">
+              <button type="button" data-dregen="${d.k}" ${loading?'disabled':''} class="d-regen px-2.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-extrabold active:scale-95 disabled:opacity-60">${loading?'再提案中...':'✨ 再提案'}</button>
+              <button type="button" data-dedit="${d.k}" class="d-edit px-2.5 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-[11px] font-bold">編集</button>
+              <button type="button" data-dexc="${d.k}" class="d-exc px-2.5 py-1.5 rounded-xl bg-slate-100 text-slate-500 text-[11px] font-bold">除外切替</button>
+              <button type="button" data-ddel="${d.k}" class="d-del px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-600 text-[11px] font-bold">削除</button>
+            </div>
+          </div>`;
+      } else if (ent.status === 'excluded') {
+        body = `<div class="mt-2.5 p-2.5 rounded-xl bg-slate-100 flex items-center justify-between"><span class="text-xs font-bold text-slate-500">夕食なし（外食・除外）</span><button type="button" data-dunexc="${d.k}" class="d-unexc px-2.5 py-1 rounded-lg bg-white border text-[11px] font-extrabold text-slate-700">除外解除</button></div>`;
+      } else {
+        body = `<div class="mt-2.5 p-2.5 rounded-xl border border-dashed border-slate-200 bg-slate-50 flex items-center justify-between"><span class="text-xs text-slate-400 font-semibold">未設定</span><div class="flex gap-1.5"><button type="button" data-dexc="${d.k}" class="d-exc px-2.5 py-1 rounded-lg bg-white border text-[11px] font-bold text-slate-500">除外切替</button><button type="button" data-dedit="${d.k}" class="d-edit px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-extrabold">＋手動入力</button></div></div>`;
+      }
+      return `
+        <div class="bg-white rounded-2xl p-3.5 shadow-sm border ${isToday?'border-emerald-300':'border-slate-200/70'}">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded-full text-xs font-extrabold ${isToday?'bg-emerald-600 text-white':'bg-slate-800 text-white'}">${d.s}</span>
+              <span class="text-sm font-extrabold text-slate-900">${d.f}</span>
+              <span class="text-[10px] font-semibold text-slate-400">${d.date.slice(5).replace('-','/')}</span>
+            </div>
+            <button type="button" data-jump="${d.date}" class="d-jump px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">記録へ →</button>
+          </div>
+          ${body}
+        </div>`;
+    }).join('');
+  }
+
+  // ===== TAB 2 描画: 食事管理（月〜日＆写真AI） =====
+  function renderMeals() {
+    const dt = ui.selectedDate;
+    const met = calcMetrics();
+    const rec = getDayRecord(dt);
+    const dk = dayKeyOf(dt);
+    const dObj = DAYS.find(d => d.k === dk);
+
+    const wk = getWeekDates(dt);
+    $('ml-week-range').textContent = `${wk[0].date.slice(5).replace('-','/')}（月）〜 ${wk[6].date.slice(5).replace('-','/')}（日）`;
+    $('ml-date-badge').textContent = dt === TODAY ? `今日・${dObj.s}曜` : `${dt.slice(5).replace('-','/')}（${dObj.s}）`;
+    $('ml-planned-lbl').textContent = `予定 ${rec.planned.toLocaleString()}kcal`;
+    $('ml-eaten').textContent = rec.eaten.toLocaleString();
+    $('ml-target').textContent = met.target.toLocaleString();
+
+    const pct = met.target ? Math.round(rec.eaten / met.target * 100) : 0;
+    const rem = met.target - rec.eaten;
+    $('ml-pct').textContent = `${pct}%`;
+    const ring = $('ml-ring');
+    ring.style.strokeDashoffset = (289.03 * (1 - Math.min(1, rec.eaten / met.target))).toFixed(2);
+    ring.style.stroke = rem < 0 ? '#e11d48' : '#10b981';
+
+    const pill = $('ml-pill');
+    pill.className = `inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-extrabold ${rem >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'}`;
+    pill.textContent = rem >= 0 ? `残り ${rem.toLocaleString()} kcal` : `${Math.abs(rem).toLocaleString()} kcal オーバー`;
+
+    const setBar = (k, cur, goal, col, over) => {
+      $(`ml-${k}-txt`).textContent = `${cur}g / ${goal}g`;
+      const b = $(`ml-${k}-bar`);
+      b.style.width = `${goal ? Math.min(100, Math.round(cur/goal*100)) : 0}%`;
+      b.className = `h-full rounded-full transition-all ${cur > goal ? over : col}`;
+    };
+    setBar('p', rec.p, met.pG, 'bg-emerald-500', 'bg-emerald-700');
+    setBar('f', rec.f, met.fG, 'bg-amber-500', 'bg-rose-500');
+    setBar('c', rec.c, met.cG, 'bg-sky-500', 'bg-rose-500');
+
+    // 月〜日 クイック切替ストリップ
+    $('week-strip').innerHTML = wk.map(w => {
+      const r = getDayRecord(w.date);
+      const active = w.date === dt;
+      const isT = w.date === TODAY;
+      const wPct = met.target ? Math.min(100, Math.round(r.eaten / met.target * 100)) : 0;
+      const barCol = r.eaten === 0 ? 'bg-slate-200' : (r.eaten > met.target ? 'bg-rose-500' : (active ? 'bg-emerald-200' : 'bg-emerald-500'));
+      return `
+        <button type="button" data-wdate="${w.date}" class="wk-day-btn py-1.5 px-0.5 rounded-xl flex flex-col items-center gap-1 active:scale-95 ${active?'bg-emerald-600 text-white shadow-sm':'text-slate-600 hover:bg-slate-100'}">
+          <span class="text-[11px] font-extrabold leading-none flex items-center gap-0.5">${w.s}${isT?`<span class="w-1.5 h-1.5 rounded-full ${active?'bg-amber-300':'bg-emerald-500'}"></span>`:''}</span>
+          <span class="text-[9px] opacity-75 leading-none">${w.date.slice(8)}</span>
+          <div class="w-6 h-1 rounded-full ${active?'bg-emerald-900/30':'bg-slate-100'} overflow-hidden"><div class="h-full ${barCol}" style="width:${r.eaten?Math.max(20,wPct):0}%"></div></div>
+        </button>`;
+    }).join('');
+
+    // 時間帯別リスト
+    $('meal-sections').innerHTML = TIMINGS.map(t => {
+      const items = (rec.log.items || []).filter(i => i.timing === t.k);
+      const isDin = t.k === 'dinner';
+      let secCal = items.filter(i=>i.isEaten).reduce((s,i)=>s+(Number(i.calories)||0), 0);
+      if (isDin && rec.linked?.isEaten) secCal += Number(rec.linked.calories)||0;
+
+      let html = '';
+      if (isDin && rec.linked) {
+        const ld = rec.linked;
+        html += `
+          <div class="p-3 rounded-2xl border ${ld.isEaten ? 'bg-emerald-50/80 border-emerald-300' : 'bg-emerald-50/20 border-emerald-200'}">
+            <div class="flex items-start gap-2.5">
+              <button type="button" id="btn-toggle-linked-din" class="mt-0.5 w-7 h-7 rounded-full flex items-center justify-center shrink-0 active:scale-90 ${ld.isEaten?'bg-emerald-600 text-white':'bg-white border-2 border-emerald-400 text-transparent'}">✓</button>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-1.5 mb-0.5"><span class="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[9px] font-extrabold">夕食献立と連動</span><span class="text-[10px] font-bold ${ld.isEaten?'text-emerald-700':'text-slate-400'}">${ld.isEaten?'✓ 摂取済':'タップで食べた記録'}</span></div>
+                <div class="flex justify-between gap-2"><p class="text-sm font-extrabold ${ld.isEaten?'line-through text-slate-400':'text-slate-900'}">${esc(ld.name)}</p><span class="shrink-0 text-xs font-extrabold text-emerald-800">${(ld.calories||0).toLocaleString()}kcal</span></div>
+                <p class="text-[10px] font-bold text-slate-500 mt-1">P ${ld.protein||0}g / F ${ld.fat||0}g / C ${ld.carbs||0}g</p>
+              </div>
+            </div>
+          </div>`;
+      } else if (isDin && rec.planEntry?.status === 'excluded') {
+        html += `<div class="p-2 rounded-xl bg-slate-100 text-[11px] font-bold text-slate-500">夕食献立：除外設定（外食などは右上の＋追加から記録）</div>`;
+      }
+
+      html += items.map(it => `
+        <div class="p-2.5 rounded-2xl border ${it.isEaten?'bg-slate-50 border-slate-200':'bg-white border-slate-200/60'} flex items-start gap-2.5">
+          <button type="button" data-ltog="${it.id}" class="l-tog mt-0.5 w-7 h-7 rounded-full flex items-center justify-center shrink-0 active:scale-90 ${it.isEaten?'bg-emerald-600 text-white':'bg-white border-2 border-slate-300 text-transparent'}">✓</button>
+          ${it.thumb ? `<img src="${it.thumb}" alt="" class="w-11 h-11 rounded-xl object-cover border border-slate-200 shrink-0" />` : ''}
+          <div class="flex-1 min-w-0">
+            <div class="flex justify-between gap-2">
+              <p class="text-sm font-bold leading-snug ${it.isEaten?'text-slate-900':'text-slate-400'}">${esc(it.name)}</p>
+              <span class="shrink-0 text-xs font-extrabold text-slate-700">${(it.calories||0).toLocaleString()}kcal</span>
+            </div>
+            <div class="flex items-center justify-between mt-1.5 text-[10px]">
+              <span class="font-bold text-slate-400">P${it.protein||0} F${it.fat||0} C${it.carbs||0}</span>
+              <div class="flex gap-2">
+                <button type="button" data-ledit="${it.id}" class="l-edit font-bold text-slate-500">編集</button>
+                <button type="button" data-ldel="${it.id}" class="l-del font-bold text-rose-500">削除</button>
+              </div>
+            </div>
+          </div>
+        </div>`).join('');
+
+      if (!html) html = `<p class="text-[11px] text-slate-400 text-center py-2.5 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">記録なし</p>`;
+
+      return `
+        <div class="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-200/70 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2"><span class="w-8 h-8 rounded-xl ${t.bg} flex items-center justify-center text-sm">${t.ic}</span><div><h4 class="text-sm font-extrabold text-slate-900 leading-tight">${t.l}</h4><p class="text-[10px] font-bold text-slate-400">摂取 ${secCal.toLocaleString()} kcal</p></div></div>
+            <button type="button" data-ladd="${t.k}" class="l-add px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-extrabold active:scale-95">＋追加</button>
+          </div>
+          <div class="space-y-2">${html}</div>
+        </div>`;
+    }).join('');
+  }
+
+  // ===== TAB 3 描画: 推移・履歴 =====
+  function renderHistory() {
+    const met = calcMetrics();
+    const n = ui.histPeriod;
+    document.querySelectorAll('.hperiod-btn').forEach(b => {
+      const a = Number(b.dataset.hdays) === n;
+      b.className = `hperiod-btn py-2.5 rounded-xl text-xs font-extrabold transition ${a ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500'}`;
+    });
+
+    const series = [];
+    for (let i = n - 1; i >= 0; i--) {
+      const ds = addDays(TODAY, -i);
+      series.push({ date:ds, ...getDayRecord(ds) });
+    }
+    const recorded = series.filter(s => s.eaten > 0);
+    const avgCal = recorded.length ? Math.round(recorded.reduce((a,b)=>a+b.eaten,0)/recorded.length) : 0;
+    const avgP = recorded.length ? Math.round(recorded.reduce((a,b)=>a+b.p,0)/recorded.length) : 0;
+    const avgF = recorded.length ? Math.round(recorded.reduce((a,b)=>a+b.f,0)/recorded.length) : 0;
+    const avgC = recorded.length ? Math.round(recorded.reduce((a,b)=>a+b.c,0)/recorded.length) : 0;
+    const okDays = recorded.filter(s => s.eaten >= met.target*0.85 && s.eaten <= met.target*1.15).length;
+    const okRate = recorded.length ? Math.round(okDays / recorded.length * 100) : 0;
+
+    $('hist-avg-cal').textContent = avgCal.toLocaleString();
+    $('hist-ok-rate').textContent = `${okRate}%`;
+    $('hist-ok-sub').textContent = `${okDays} / ${recorded.length}日`;
+    $('hist-rec-days').textContent = `${recorded.length}日`;
+    $('hist-period-lbl').textContent = `直近${n}日中`;
+    $('hist-avg-p').textContent = avgP; $('hist-avg-f').textContent = avgF; $('hist-avg-c').textContent = avgC;
+    $('hist-tgt-lbl').textContent = met.target.toLocaleString();
+
+    if (!series.some(s => s.date === ui.histFocusDate)) ui.histFocusDate = TODAY;
+
+    // SVG推移棒グラフ
+    const maxV = Math.max(met.target * 1.25, ...series.map(s=>s.eaten), 1200);
+    const svgW = Math.max(320, n * 24), svgH = 148, padL = 6, padR = 6, padT = 16, padB = 22;
+    const plotW = svgW - padL - padR, plotH = svgH - padT - padB;
+    const step = plotW / n;
+    const barW = Math.max(8, Math.min(26, step * 0.68));
+    const tgtY = padT + (1 - met.target / maxV) * plotH;
+
+    $('hist-chart-svg').innerHTML = `
+      <svg viewBox="0 0 ${svgW} ${svgH}" class="w-full h-36" style="min-width:${n>7?'480px':'100%'}">
+        <line x1="${padL}" y1="${tgtY.toFixed(1)}" x2="${svgW-padR}" y2="${tgtY.toFixed(1)}" stroke="#10b981" stroke-width="1.5" stroke-dasharray="4 3" />
+        ${series.map((s, idx) => {
+          const x = padL + idx * step + (step - barW) / 2;
+          const h = s.eaten > 0 ? Math.max(4, (s.eaten / maxV) * plotH) : 2;
+          const y = padT + plotH - h;
+          const sel = s.date === ui.histFocusDate;
+          const over = s.eaten > met.target;
+          const fill = s.eaten === 0 ? '#e2e8f0' : (over ? (sel?'#e11d48':'#fb7185') : (sel?'#059669':'#34d399'));
+          const showLbl = n <= 7 || idx === 0 || idx === n-1 || idx % 5 === 0;
+          return `
+            <g class="h-bar cursor-pointer" data-hdate="${s.date}">
+              <rect x="${(padL+idx*step).toFixed(1)}" y="0" width="${step.toFixed(1)}" height="${svgH}" fill="transparent" />
+              <rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="4" fill="${fill}" ${sel?'stroke="#0f172a" stroke-width="1.5"':''} />
+              ${showLbl ? `<text x="${(x+barW/2).toFixed(1)}" y="${svgH-5}" text-anchor="middle" font-size="9" fill="${sel?'#047857':'#64748b'}" font-weight="${sel?'800':'600'}">${s.date.slice(5).replace('-','/')}</text>` : ''}
+            </g>`;
+        }).join('')}
+      </svg>`;
+
+    const foc = series.find(s => s.date === ui.histFocusDate) || series[series.length-1];
+    const fDay = DAYS.find(d => d.k === dayKeyOf(foc.date))?.s || '';
+    $('hs-date').textContent = `${foc.date.replace(/-/g,'/')} (${fDay}) — ${foc.eaten.toLocaleString()} kcal`;
+    $('hs-stats').textContent = `目標比 ${met.target?Math.round(foc.eaten/met.target*100):0}% ・ P ${foc.p}g / F ${foc.f}g / C ${foc.c}g`;
+    $('btn-hs-jump').classList.remove('hidden');
+    $('btn-hs-jump').dataset.jump = foc.date;
+
+    // 体重SVG折れ線グラフ＆履歴
+    const wh = data.weightHistory;
+    $('w-cnt').textContent = `${wh.length}件`;
+    if (wh.length < 2) {
+      $('w-chart').innerHTML = `<p class="text-[11px] text-slate-400 text-center py-2.5">📈 2件以上記録すると体重推移グラフが表示されます</p>`;
+    } else {
+      const pts = wh.slice(0, 14).reverse();
+      const ws = pts.map(x=>Number(x.weight));
+      let minW = Math.min(...ws), maxW = Math.max(...ws);
+      const pad = maxW-minW < 0.4 ? 0.5 : (maxW-minW)*0.2; minW -= pad; maxW += pad;
+      const W=300, H=100, pL=30, pR=14, pT=15, pB=18, pw=W-pL-pR, ph=H-pT-pB;
+      const cs = pts.map((x,i) => ({ x:pL+(i/(pts.length-1))*pw, y:pT+((maxW-x.weight)/(maxW-minW))*ph, w:x.weight, d:x.date.slice(5) }));
+      const poly = cs.map(c=>`${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+      $('w-chart').innerHTML = `
+        <svg viewBox="0 0 ${W} ${H}" class="w-full h-24">
+          <line x1="${pL}" y1="${pT}" x2="${W-pR}" y2="${pT}" stroke="#e2e8f0" stroke-dasharray="3 3"/>
+          <text x="${pL-4}" y="${pT+3}" text-anchor="end" font-size="8.5" fill="#94a3b8">${maxW.toFixed(1)}</text>
+          <line x1="${pL}" y1="${pT+ph}" x2="${W-pR}" y2="${pT+ph}" stroke="#cbd5e1"/>
+          <text x="${pL-4}" y="${pT+ph+3}" text-anchor="end" font-size="8.5" fill="#94a3b8">${minW.toFixed(1)}</text>
+          <polyline fill="none" stroke="#10b981" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" points="${poly}" />
+          ${cs.map((c,i)=>`<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="${i===cs.length-1?4:3}" fill="#fff" stroke="#059669" stroke-width="2"/>${i===cs.length-1?`<text x="${c.x.toFixed(1)}" y="${(c.y-7).toFixed(1)}" text-anchor="middle" font-size="9.5" fill="#047857" font-weight="800">${c.w.toFixed(1)}kg</text>`:''}${i===0||i===cs.length-1?`<text x="${c.x.toFixed(1)}" y="${H-3}" text-anchor="middle" font-size="8.5" fill="#64748b">${esc(c.d)}</text>`:''}`).join('')}
+        </svg>`;
+    }
+    $('w-list').innerHTML = !wh.length ? '' : wh.slice(0, 8).map((e, idx) => {
+      const prev = wh[idx+1];
+      let diff = '';
+      if (prev) {
+        const d = +(e.weight - prev.weight).toFixed(1);
+        diff = `<span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold ${d<0?'bg-emerald-50 text-emerald-700':d>0?'bg-rose-50 text-rose-600':'bg-slate-100 text-slate-500'}">${d>0?'+':''}${d.toFixed(1)}kg</span>`;
+      }
+      return `<div class="flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/70 text-xs"><div><span class="text-slate-500 font-bold mr-2">${esc(e.date)}</span><span class="font-extrabold text-slate-900 mr-1.5">${Number(e.weight).toFixed(1)}kg</span>${diff}${e.memo?`<span class="text-[10px] text-slate-500 ml-1.5">${esc(e.memo)}</span>`:''}</div><button type="button" data-wdel="${e.id}" class="w-del text-slate-400 hover:text-rose-600 font-bold px-1">✕</button></div>`;
+    }).join('');
+
+    // サンプルボタン表示切替
+    const hasSample = Object.values(data.logsByDate).some(l => (l.items||[]).some(it => it.isSample));
+    $('btn-clear-sample').classList.toggle('hidden', !hasSample);
+
+    // 日別食事履歴アコーディオン
+    const allRecordedDates = Array.from(new Set([...Object.keys(data.logsByDate), ...series.filter(s=>s.eaten>0).map(s=>s.date)]))
+      .map(ds => ({ date:ds, ...getDayRecord(ds) }))
+      .filter(r => r.eaten > 0)
+      .sort((a,b) => b.date.localeCompare(a.date));
+
+    $('hist-log-list').innerHTML = allRecordedDates.length === 0
+      ? `<div class="bg-white rounded-2xl p-5 text-center text-xs text-slate-400 border border-dashed border-slate-200">まだ食事の摂取記録がありません。<br>「食事管理」で記録するか、上の「過去7日サンプル読込」で推移を確認できます。</div>`
+      : allRecordedDates.slice(0, 60).map(r => {
+          const open = ui.expandedHist.has(r.date);
+          const pct = met.target ? Math.round(r.eaten / met.target * 100) : 0;
+          const ds = DAYS.find(d=>d.k===dayKeyOf(r.date))?.s || '';
+          const badgeCol = pct > 115 ? 'bg-rose-50 text-rose-600' : (pct >= 85 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600');
+          return `
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
+              <button type="button" data-hacc="${r.date}" class="h-acc w-full p-3.5 text-left flex items-center justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-extrabold text-slate-900">${r.date.replace(/-/g,'/')} (${ds})</span>
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${badgeCol}">目標比 ${pct}%</span>
+                  </div>
+                  <p class="text-[11px] font-bold text-slate-500 mt-1">P ${r.p}g / F ${r.f}g / C ${r.c}g ・ ${r.eatenNames.length}品</p>
+                </div>
+                <div class="text-right shrink-0">
+                  <p class="text-base font-extrabold text-slate-900">${r.eaten.toLocaleString()}<span class="text-[10px] font-semibold text-slate-400 ml-0.5">kcal</span></p>
+                  <span class="text-[10px] font-bold text-emerald-600">${open?'閉じる ▲':'詳細 ▼'}</span>
+                </div>
+              </button>
+              ${open ? `
+                <div class="px-3.5 pb-3.5 pt-2 border-t border-slate-100 space-y-2 bg-slate-50/50">
+                  ${r.eatenNames.map(m => `
+                    <div class="flex items-center gap-2 text-xs">
+                      ${m.thumb ? `<img src="${m.thumb}" alt="" class="w-8 h-8 rounded-lg object-cover border shrink-0" />` : ''}
+                      <span class="px-1.5 py-0.5 rounded bg-white border text-[9px] font-bold text-slate-500 shrink-0">${esc(m.timing)}</span>
+                      <span class="flex-1 font-bold text-slate-800 truncate">${esc(m.name)}</span>
+                      <span class="font-extrabold text-slate-600 shrink-0">${(m.calories||0).toLocaleString()}kcal</span>
+                    </div>`).join('')}
+                  <button type="button" data-jump="${r.date}" class="h-jump-day w-full py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-extrabold">この日の食事記録を編集 →</button>
+                </div>` : ''}
+            </div>`;
+        }).join('');
+  }
+
+  // ===== TAB 4 描画: 食材・設定 =====
+  function renderSettings() {
+    // 食材リスト
+    const all = data.ingredients, unused = all.filter(i=>!i.used);
+    $('ing-sub').textContent = `在庫 ${unused.length}品 / 計 ${all.length}品`;
+    $('ing-filters').innerHTML = ['すべて', ...CATS].map(c => {
+      const a = ui.ingFilter === c;
+      const cnt = c==='すべて' ? unused.length : unused.filter(i=>i.category===c).length;
+      return `<button type="button" data-icat="${c}" class="i-cat shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold border ${a?'bg-emerald-600 text-white border-emerald-600':'bg-slate-50 text-slate-600 border-slate-200'}">${c}${cnt?` (${cnt})`:''}</button>`;
+    }).join('');
+    const list = (ui.ingFilter==='すべて' ? all : all.filter(i=>i.category===ui.ingFilter)).slice().sort((a,b)=>Number(a.used)-Number(b.used));
+    $('ing-list').innerHTML = !list.length
+      ? `<p class="text-xs text-slate-400 text-center py-4 border border-dashed rounded-xl bg-slate-50">手持ち食材が未登録です</p>`
+      : list.map(i => `
+        <div class="flex items-center gap-2 p-2 rounded-xl border ${i.used?'bg-slate-50 opacity-60':'bg-white border-slate-200'}">
+          <button type="button" data-iuse="${i.id}" class="i-use w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs ${i.used?'bg-slate-400 text-white':'border-2 border-emerald-400 text-transparent'}">✓</button>
+          <div class="flex-1 min-w-0"><p class="text-xs font-bold truncate ${i.used?'line-through text-slate-400':'text-slate-900'}">${esc(i.name)}</p><p class="text-[10px] text-slate-400">${esc(i.category)}</p></div>
+          <input type="text" data-iqty="${i.id}" value="${esc(i.quantity||'')}" class="i-qty w-14 rounded-lg border bg-slate-50 px-1.5 py-1 text-[11px] font-bold text-center" />
+          <button type="button" data-idel="${i.id}" class="i-del w-6 h-6 rounded-lg text-slate-400 hover:text-rose-600 font-bold text-xs">✕</button>
+        </div>`).join('');
+
+    // プロフィール
+    const p = data.profile, m = calcMetrics();
+    $('prof-tgt').textContent = m.target.toLocaleString();
+    $('prof-dkcal').textContent = m.dinnerTarget.toLocaleString();
+    $('prof-bmr').textContent = m.bmr.toLocaleString(); $('prof-tdee').textContent = m.tdee.toLocaleString();
+    $('prof-manual-tag').classList.toggle('hidden', !p.useCustom);
+    if (document.activeElement !== $('p-weight')) $('p-weight').value = p.weight;
+    if (document.activeElement !== $('p-height')) $('p-height').value = p.height;
+    if (document.activeElement !== $('p-age')) $('p-age').value = p.age;
+    if (document.activeElement !== $('p-custom-val')) $('p-custom-val').value = p.customCal || m.autoTgt;
+    if (document.activeElement !== $('w-val-in') && !$('w-val-in').value) $('w-val-in').value = p.weight;
+    $('p-custom-on').checked = !!p.useCustom;
+    $('p-custom-box').classList.toggle('hidden', !p.useCustom);
+    $('p-ratio-slider').value = m.ratio; $('p-ratio-val').textContent = m.ratio; $('p-ratio-kcal').textContent = m.dinnerTarget.toLocaleString();
+
+    document.querySelectorAll('.g-btn').forEach(b => b.className = `g-btn rounded-lg text-xs font-extrabold ${b.dataset.g===p.gender?'bg-white text-emerald-700 shadow-sm':'text-slate-500'}`);
+    document.querySelectorAll('.act-btn').forEach(b => b.className = `act-btn py-2 px-1 rounded-xl border text-center text-[11px] font-bold ${b.dataset.act===p.activity?'border-emerald-600 bg-emerald-50 text-emerald-800':'border-slate-200 bg-slate-50 text-slate-600'}`);
+    document.querySelectorAll('.goal-btn').forEach(b => b.className = `goal-btn py-2 rounded-xl border text-center text-xs font-extrabold ${b.dataset.goal===p.goal?'border-emerald-600 bg-emerald-600 text-white':'border-slate-200 bg-slate-50 text-slate-700'}`);
+
+    // APIキー状態
+    const k = getApiKey();
+    if (document.activeElement !== $('in-api-key')) $('in-api-key').value = k;
+    $('api-key-status').textContent = k ? '設定済（Gemini実画像AI）' : '未設定（内蔵AIモード）';
+    $('api-key-status').className = `text-[10px] font-extrabold px-2 py-0.5 rounded-full ${k ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`;
+  }
+
+  // ===== AI夕食モーダル制御 =====
+  function openAiDinModal() {
+    const m = calcMetrics(), unused = data.ingredients.filter(i=>!i.used);
+    ui.aiModal.inc = new Set(DAYS.filter(d => data.dinners[d.k]?.status !== 'excluded').map(d=>d.k));
+    if (!ui.aiModal.inc.size) DAYS.forEach(d => ui.aiModal.inc.add(d.k));
+    ui.aiModal.ings = new Set(unused.map(i=>i.id));
+    ui.aiModal.cal = m.dinnerTarget; ui.aiModal.preview = null;
+    $('aid-cal').value = m.dinnerTarget; $('aid-err').classList.add('hidden');
+    renderAiDinModal(); $('m-ai-din').classList.remove('hidden');
+  }
+  function renderAiDinModal() {
+    const am = ui.aiModal, isP = !!am.preview;
+    $('aid-form').classList.toggle('hidden', isP); $('aid-prev').classList.toggle('hidden', !isP);
+    if (!isP) {
+      $('aid-days').innerHTML = DAYS.map(d => {
+        const on = am.inc.has(d.k);
+        return `<button type="button" data-ad="${d.k}" class="ad-tog py-2 rounded-xl border-2 flex flex-col items-center ${on?'bg-emerald-600 border-emerald-600 text-white':'bg-slate-100 border-slate-200 text-slate-400'}"><span class="text-xs font-extrabold">${d.s}</span><span class="text-[9px] font-bold">${on?'作成':'除く'}</span></button>`;
+      }).join('');
+      const inc = DAYS.filter(d=>am.inc.has(d.k)).map(d=>d.s), exc = DAYS.filter(d=>!am.inc.has(d.k)).map(d=>d.s);
+      $('aid-day-msg').textContent = inc.length ? `作成: ${inc.length}日(${inc.join('・')})${exc.length?` ／ 除く: ${exc.join('・')}`:'（全7日）'}` : '作成する曜日を1日以上選択してください';
+      const unused = data.ingredients.filter(i=>!i.used);
+      $('aid-ing-cnt').textContent = unused.filter(i=>am.ings.has(i.id)).length;
+      $('aid-ing-chips').innerHTML = unused.length ? unused.map(i => {
+        const s = am.ings.has(i.id);
+        return `<button type="button" data-aiing="${i.id}" class="ai-ing px-2.5 py-1 rounded-full text-[11px] font-bold border ${s?'bg-emerald-600 text-white border-emerald-600':'bg-white text-slate-400 line-through'}">${esc(i.name)}</button>`;
+      }).join('') : `<p class="text-[11px] text-slate-400">手持ち食材未登録（このままおまかせ生成できます）</p>`;
+      $('aid-conds').innerHTML = CONDS.map(c => {
+        const s = am.conds.has(c);
+        return `<button type="button" data-acond="${c}" class="a-cond px-2.5 py-1 rounded-full text-[11px] font-bold border ${s?'bg-emerald-600 text-white border-emerald-600':'bg-slate-50 text-slate-600'}">${s?'✓ ':'＋ '}${c}</button>`;
+      }).join('');
+    } else {
+      $('aid-prev-cards').innerHTML = DAYS.filter(d=>am.preview[d.k]).map(d => {
+        const it = am.preview[d.k];
+        return `<div class="p-3 rounded-2xl bg-slate-50 border border-emerald-200 space-y-1"><div class="flex justify-between"><span class="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-extrabold">${d.f}</span><span class="text-xs font-extrabold text-emerald-800">${it.calories} kcal</span></div><p class="text-sm font-extrabold">${esc(it.name)}</p><p class="text-[10px] font-bold text-slate-500">P${it.protein}g / F${it.fat}g / C${it.carbs}g</p><p class="text-[11px] text-slate-500">📝 ${esc(it.memo)}</p></div>`;
+      }).join('');
+    }
+  }
+  async function runAiDinners() {
+    const am = ui.aiModal, keys = DAYS.map(d=>d.k).filter(k=>am.inc.has(k));
+    if (!keys.length) { $('aid-err').textContent='曜日を1日以上選択してください'; $('aid-err').classList.remove('hidden'); return; }
+    $('aid-err').classList.add('hidden');
+    const b1 = $('btn-aid-run'), b2 = $('btn-aid-regen');
+    b1.disabled = b2.disabled = true; b1.textContent = `${keys.length}日分の夕食を作成中...`; b2.textContent = '再生成中...';
+    try {
+      const ings = data.ingredients.filter(i=>!i.used && am.ings.has(i.id));
+      const cal = Math.max(300, Number($('aid-cal').value)||am.cal);
+      const conds = [...am.conds, $('aid-memo').value.trim()].filter(Boolean).join('、');
+      am.preview = await generateDinners({ dayKeys:keys, ings, dinnerTarget:cal, conds });
+      renderAiDinModal(); toast('夕食プランを提案しました！');
+    } catch (e) {
+      am.preview = null; renderAiDinModal();
+      $('aid-err').textContent = `エラー: ${e.message}`; $('aid-err').classList.remove('hidden');
+    } finally {
+      b1.disabled = b2.disabled = false; b1.textContent = '✨ AIに夕食献立をお願いする'; b2.textContent = '🔄 同じ条件で再生成';
+    }
+  }
+
+  // ===== イベント登録 =====
+  document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+  $('btn-hdr-stock').addEventListener('click', () => switchTab('settings'));
+  document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => closeModal(b.dataset.close)));
+  ['m-ai-din','m-dish-save','m-log','m-din-edit','m-rec-rev','m-recipe'].forEach(id => {
+    $(id).addEventListener('click', e => { if (e.target.id === id) closeModal(id); });
+  });
+  $('cf-cancel').addEventListener('click', () => closeModal('m-confirm'));
+  $('cf-ok').addEventListener('click', () => { const f = cfCb; closeModal('m-confirm'); if (f) f(); });
+
+  // Tab 1 操作
+  $('btn-open-ai-din').addEventListener('click', openAiDinModal);
+  $('btn-reset-din').addEventListener('click', () => askConfirm('献立クリア', '月〜日の夕食献立を未設定に戻しますか？', 'クリア', () => { data.dinners = emptyDinners(); renderAll(); toast('夕食献立をクリアしました'); }));
+
+  $('dinner-list').addEventListener('click', async e => {
+    const jp = e.target.closest('.d-jump');
+    if (jp) { ui.selectedDate = jp.dataset.jump; renderMeals(); switchTab('meals'); return; }
+    const rg = e.target.closest('.d-regen');
+    if (rg && !ui.regenDay) {
+      const dk = rg.dataset.dregen; ui.regenDay = dk; renderDinners();
+      try {
+        const avoid = DAYS.map(d=>data.dinners[d.k]?.item?.name).filter(Boolean);
+        const res = await generateDinners({ dayKeys:[dk], ings:data.ingredients.filter(i=>!i.used), dinnerTarget:calcMetrics().dinnerTarget, conds:'他曜日と被らない別案', avoid });
+        if (res[dk]) { data.dinners[dk] = { status:'planned', item:res[dk] }; toast('別案に変更しました'); }
+      } catch (err) { toast(`再提案エラー: ${err.message}`); }
+      ui.regenDay = null; renderAll(); return;
+    }
+    const ed = e.target.closest('.d-edit');
+    if (ed) {
+      const dk = ed.dataset.dedit, it = data.dinners[dk]?.item;
+      $('de-title').textContent = `${DAYS.find(d=>d.k===dk).f}の夕食`; $('de-day').value = dk;
+      $('de-name').value = it?.name||''; $('de-cal').value = it?.calories??''; $('de-p').value = it?.protein??'';
+      $('de-f').value = it?.fat??''; $('de-c').value = it?.carbs??''; $('de-ings').value = (it?.usedIngredients||[]).join(', ');
+      $('de-memo').value = it?.memo||''; $('btn-de-del').classList.toggle('hidden', !it);
+      $('m-din-edit').classList.remove('hidden'); return;
+    }
+    const ex = e.target.closest('.d-exc');
+    if (ex) { data.dinners[ex.dataset.dexc] = { status:'excluded', item:null }; renderAll(); toast('除外に設定しました'); return; }
+    const ux = e.target.closest('.d-unexc');
+    if (ux) { data.dinners[ux.dataset.dunexc] = { status:'empty', item:null }; renderAll(); return; }
+    const dl = e.target.closest('.d-del');
+    if (dl) { data.dinners[dl.dataset.ddel] = { status:'empty', item:null }; renderAll(); toast('削除しました'); }
+  });
+
+  // AI夕食モーダル操作
+  $('aid-days').addEventListener('click', e => { const b = e.target.closest('.ad-tog'); if (!b) return; const k = b.dataset.ad; ui.aiModal.inc.has(k)?ui.aiModal.inc.delete(k):ui.aiModal.inc.add(k); renderAiDinModal(); });
+  $('aid-ing-chips').addEventListener('click', e => { const b = e.target.closest('.ai-ing'); if (!b) return; const id = b.dataset.aiing; ui.aiModal.ings.has(id)?ui.aiModal.ings.delete(id):ui.aiModal.ings.add(id); renderAiDinModal(); });
+  $('aid-ing-all').addEventListener('click', () => { ui.aiModal.ings = new Set(data.ingredients.filter(i=>!i.used).map(i=>i.id)); renderAiDinModal(); });
+  $('aid-ing-none').addEventListener('click', () => { ui.aiModal.ings.clear(); renderAiDinModal(); });
+  $('aid-cal-m').addEventListener('click', () => { $('aid-cal').value = Math.max(300, (Number($('aid-cal').value)||800)-50); });
+  $('aid-cal-p').addEventListener('click', () => { $('aid-cal').value = Math.min(2000, (Number($('aid-cal').value)||800)+50); });
+  $('aid-conds').addEventListener('click', e => { const b = e.target.closest('.a-cond'); if (!b) return; const c = b.dataset.acond; ui.aiModal.conds.has(c)?ui.aiModal.conds.delete(c):ui.aiModal.conds.add(c); renderAiDinModal(); });
+  $('btn-aid-run').addEventListener('click', runAiDinners);
+  $('btn-aid-regen').addEventListener('click', runAiDinners);
+  $('btn-aid-back').addEventListener('click', () => { ui.aiModal.preview = null; renderAiDinModal(); });
+  $('btn-aid-commit').addEventListener('click', () => {
+    const am = ui.aiModal; if (!am.preview) return;
+    DAYS.forEach(d => {
+      if (am.preview[d.k]) data.dinners[d.k] = { status:'planned', item:am.preview[d.k] };
+      else if (!am.inc.has(d.k)) data.dinners[d.k] = { status:'excluded', item:null };
+    });
+    am.preview = null; closeModal('m-ai-din'); renderAll(); switchTab('dinners'); toast('夕食献立を反映しました！');
+  });
+
+  // 夕食手動編集＆レシピ検索
+  $('btn-de-ai').addEventListener('click', async () => {
+    const nm = $('de-name').value.trim(); if (!nm) return toast('料理名を入力してください');
+    const b = $('btn-de-ai'); b.disabled = true; b.textContent = '推定中...';
+    try {
+      const r = await estimateMealText(nm);
+      $('de-cal').value = r.calories; $('de-p').value = r.protein; $('de-f').value = r.fat; $('de-c').value = r.carbs;
+      toast(`約 ${r.calories} kcal と推定しました`);
+    } catch (e) { toast(`推定エラー: ${e.message}`); }
+    b.disabled = false; b.textContent = '✨ AIでカロリー・PFC推定';
+  });
+  $('form-din-edit').addEventListener('submit', e => {
+    e.preventDefault();
+    const dk = $('de-day').value;
+    data.dinners[dk] = { status:'planned', item:{
+      id: data.dinners[dk]?.item?.id || uid('din'), name:$('de-name').value.trim(),
+      calories:Math.max(0, Number($('de-cal').value)||0), protein:Math.max(0, Number($('de-p').value)||0),
+      fat:Math.max(0, Number($('de-f').value)||0), carbs:Math.max(0, Number($('de-c').value)||0),
+      usedIngredients:$('de-ings').value.split(/[,、]/).map(s=>s.trim()).filter(Boolean), memo:$('de-memo').value.trim()
+    }};
+    closeModal('m-din-edit'); renderAll(); toast('夕食を保存しました');
+  });
+  $('btn-de-del').addEventListener('click', () => { data.dinners[$('de-day').value] = { status:'empty', item:null }; closeModal('m-din-edit'); renderAll(); toast('削除しました'); });
+
+  $('btn-open-recipe').addEventListener('click', () => {
+    const u = data.ingredients.filter(i=>!i.used);
+    $('rs-chips').innerHTML = u.length ? u.map(i=>`<button type="button" data-rchip="${esc(i.name)}" class="r-chip px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">＋${esc(i.name)}</button>`).join('') : '<span class="text-[10px] text-slate-400">手持ち食材なし</span>';
+    $('rs-day').value = dayKeyOf(ui.selectedDate);
+    $('m-recipe').classList.remove('hidden');
+  });
+  $('rs-chips').addEventListener('click', e => { const b = e.target.closest('.r-chip'); if (!b) return; const w = b.dataset.rchip; const cur = $('rs-kw').value.trim(); $('rs-kw').value = cur ? `${cur} ${w}` : w; });
+  $('btn-rs-clr').addEventListener('click', () => { $('rs-kw').value = ''; });
+  document.querySelectorAll('.rs-site').forEach(b => b.addEventListener('click', () => {
+    const q = encodeURIComponent($('rs-kw').value.trim() || '夕食 簡単');
+    const u = { cookpad:`https://cookpad.com/jp/search/${q}`, kurashiru:`https://www.kurashiru.com/search?query=${q}`, delish:`https://delishkitchen.tv/search?q=${q}` };
+    window.open(u[b.dataset.site], '_blank', 'noopener,noreferrer');
+  }));
+  $('btn-rs-ai').addEventListener('click', async () => {
+    const nm = $('rs-name').value.trim(); if (!nm) return toast('料理名を入力してください');
+    const b = $('btn-rs-ai'); b.disabled = true; b.textContent = '推定中...';
+    try { const r = await estimateMealText(nm); $('rs-cal').value=r.calories; $('rs-p').value=r.protein; $('rs-f').value=r.fat; $('rs-c').value=r.carbs; toast(`約 ${r.calories} kcal`); }
+    catch (e) { toast(`エラー: ${e.message}`); }
+    b.disabled = false; b.textContent = '✨ AIでカロリー・PFC推定';
+  });
+  $('form-rs-reg').addEventListener('submit', e => {
+    e.preventDefault(); const dk = $('rs-day').value;
+    data.dinners[dk] = { status:'planned', item:{ id:uid('din'), name:$('rs-name').value.trim(), calories:Number($('rs-cal').value)||0, protein:Number($('rs-p').value)||0, fat:Number($('rs-f').value)||0, carbs:Number($('rs-c').value)||0, usedIngredients:[], memo:'レシピ検索より登録' } };
+    ['rs-name','rs-cal','rs-p','rs-f','rs-c'].forEach(i => $(i).value = '');
+    closeModal('m-recipe'); renderAll(); toast('夕食献立に登録しました');
+  });
+
+  // Tab 2 操作（曜日バー・料理写真カロリーAI・ログ記録）
+  $('week-strip').addEventListener('click', e => { const b = e.target.closest('.wk-day-btn'); if (b) { ui.selectedDate = b.dataset.wdate; renderMeals(); } });
+  $('btn-ml-today').addEventListener('click', () => { ui.selectedDate = TODAY; renderMeals(); });
+
+  $('btn-dish-cam').addEventListener('click', () => $('in-dish-cam').click());
+  $('btn-dish-lib').addEventListener('click', () => $('in-dish-lib').click());
+  async function handleDishPhoto(file) {
+    if (!file) return;
+    $('dish-err').classList.add('hidden'); $('dish-loading').classList.remove('hidden');
+    try {
+      const { base64, dataUrl, thumbUrl } = await resizeImg(file, 800, 0.75);
+      $('dish-load-thumb').src = dataUrl;
+      const res = await analyzeDishPhoto(base64);
+      $('dish-loading').classList.add('hidden');
+      if (!res.name && !res.calories) { $('dish-err').textContent = '料理を認識できませんでした。明るい場所で撮影してお試しください。'; $('dish-err').classList.remove('hidden'); return; }
+      ui.dishDraftThumb = thumbUrl;
+      $('ds-thumb').src = dataUrl;
+      $('ds-comment').textContent = res.comment || '推定結果を確認して保存できます';
+      $('ds-breakdown').textContent = res.breakdown || '';
+      $('ds-date').value = ui.selectedDate;
+      const hr = new Date().getHours();
+      $('ds-timing').value = hr < 10 ? 'breakfast' : hr < 15 ? 'lunch' : hr < 21 ? 'dinner' : 'snack';
+      $('ds-name').value = res.name || '写真の料理';
+      $('ds-cal').value = Math.max(0, Math.round(Number(res.calories)||0));
+      $('ds-p').value = Math.max(0, Math.round(Number(res.protein)||0));
+      $('ds-f').value = Math.max(0, Math.round(Number(res.fat)||0));
+      $('ds-c').value = Math.max(0, Math.round(Number(res.carbs)||0));
+      $('m-dish-save').classList.remove('hidden');
+    } catch (e) {
+      $('dish-loading').classList.add('hidden');
+      $('dish-err').textContent = `解析エラー: ${e.message}`; $('dish-err').classList.remove('hidden');
+    }
+  }
+  $('in-dish-cam').addEventListener('change', e => { const f = e.target.files?.[0]; e.target.value=''; handleDishPhoto(f); });
+  $('in-dish-lib').addEventListener('change', e => { const f = e.target.files?.[0]; e.target.value=''; handleDishPhoto(f); });
+  $('form-dish-save').addEventListener('submit', e => {
+    e.preventDefault();
+    const dt = $('ds-date').value || ui.selectedDate;
+    const dl = ensureDateLog(dt);
+    dl.items.push({
+      id: uid('log'), timing:$('ds-timing').value, name:$('ds-name').value.trim(),
+      calories:Math.max(0, Number($('ds-cal').value)||0), protein:Math.max(0, Number($('ds-p').value)||0),
+      fat:Math.max(0, Number($('ds-f').value)||0), carbs:Math.max(0, Number($('ds-c').value)||0),
+      isEaten:true, thumb:ui.dishDraftThumb
+    });
+    ui.selectedDate = dt; closeModal('m-dish-save'); renderAll(); toast('写真の食事を保存しました！');
+  });
+
+  $('meal-sections').addEventListener('click', e => {
+    if (e.target.closest('#btn-toggle-linked-din')) {
+      const dt = ui.selectedDate, rec = getDayRecord(dt), dl = ensureDateLog(dt);
+      if (dl.linkedDinner?.isEaten) {
+        dl.linkedDinner = null; toast('未摂取に戻しました');
+      } else if (rec.linked) {
+        const { live, ...snap } = rec.linked;
+        dl.linkedDinner = { ...snap, isEaten:true }; toast('夕食を摂取済にしました');
+      }
+      renderAll(); return;
+    }
+    const add = e.target.closest('.l-add');
+    if (add) {
+      $('mlog-title').textContent = '食事を追加'; $('lg-id').value=''; $('lg-date').value=ui.selectedDate;
+      $('lg-timing').value=add.dataset.ladd; $('lg-name').value=''; $('lg-cal').value=''; $('lg-p').value=''; $('lg-f').value=''; $('lg-c').value='';
+      $('lg-eaten').checked=true; $('lg-ai-note').classList.add('hidden'); $('btn-lg-del').classList.add('hidden');
+      $('m-log').classList.remove('hidden'); return;
+    }
+    const tog = e.target.closest('.l-tog');
+    if (tog) {
+      const it = (data.logsByDate[ui.selectedDate]?.items||[]).find(x=>x.id===tog.dataset.ltog);
+      if (it) { it.isEaten = !it.isEaten; renderAll(); }
+      return;
+    }
+    const ed = e.target.closest('.l-edit');
+    if (ed) {
+      const it = (data.logsByDate[ui.selectedDate]?.items||[]).find(x=>x.id===ed.dataset.ledit);
+      if (!it) return;
+      $('mlog-title').textContent = '記録を編集'; $('lg-id').value=it.id; $('lg-date').value=ui.selectedDate;
+      $('lg-timing').value=it.timing; $('lg-name').value=it.name; $('lg-cal').value=it.calories;
+      $('lg-p').value=it.protein; $('lg-f').value=it.fat; $('lg-c').value=it.carbs; $('lg-eaten').checked=!!it.isEaten;
+      $('lg-ai-note').classList.add('hidden'); $('btn-lg-del').classList.remove('hidden');
+      $('m-log').classList.remove('hidden'); return;
+    }
+    const del = e.target.closest('.l-del');
+    if (del) {
+      const dl = data.logsByDate[ui.selectedDate];
+      if (dl) { dl.items = dl.items.filter(x=>x.id!==del.dataset.ldel); renderAll(); toast('削除しました'); }
+    }
+  });
+
+  $('btn-lg-ai').addEventListener('click', async () => {
+    const t = $('lg-name').value.trim(); if (!t) return toast('料理名・量を入力してください');
+    const b = $('btn-lg-ai'); b.disabled = true; b.textContent = 'AI推定中...';
+    try {
+      const r = await estimateMealText(t);
+      $('lg-cal').value=r.calories; $('lg-p').value=r.protein; $('lg-f').value=r.fat; $('lg-c').value=r.carbs;
+      if (r.comment) { $('lg-ai-note').textContent=`💡 ${r.comment}`; $('lg-ai-note').classList.remove('hidden'); }
+      toast(`約 ${r.calories} kcal と推定`);
+    } catch (e) { toast(`エラー: ${e.message}`); }
+    b.disabled = false; b.textContent = '✨ AIでカロリー・PFC推定';
+  });
+  $('form-log').addEventListener('submit', e => {
+    e.preventDefault();
+    const id = $('lg-id').value, dt = $('lg-date').value || ui.selectedDate;
+    let keepThumb = null;
+    if (id) {
+      const old = (data.logsByDate[ui.selectedDate]?.items||[]).find(x=>x.id===id);
+      keepThumb = old?.thumb || null;
+      if (data.logsByDate[ui.selectedDate]) data.logsByDate[ui.selectedDate].items = data.logsByDate[ui.selectedDate].items.filter(x=>x.id!==id);
+    }
+    const dl = ensureDateLog(dt);
+    dl.items.push({
+      id: id || uid('log'), timing:$('lg-timing').value, name:$('lg-name').value.trim(),
+      calories:Math.max(0, Number($('lg-cal').value)||0), protein:Math.max(0, Number($('lg-p').value)||0),
+      fat:Math.max(0, Number($('lg-f').value)||0), carbs:Math.max(0, Number($('lg-c').value)||0),
+      isEaten:$('lg-eaten').checked, ...(keepThumb?{thumb:keepThumb}:{})
+    });
+    ui.selectedDate = dt; closeModal('m-log'); renderAll(); toast(id?'更新しました':'記録しました');
+  });
+  $('btn-lg-del').addEventListener('click', () => {
+    const id = $('lg-id').value;
+    if (id && data.logsByDate[ui.selectedDate]) data.logsByDate[ui.selectedDate].items = data.logsByDate[ui.selectedDate].items.filter(x=>x.id!==id);
+    closeModal('m-log'); renderAll(); toast('削除しました');
+  });
+
+  // Tab 3 操作（推移グラフ・サンプル読込・体重履歴）
+  document.querySelectorAll('.hperiod-btn').forEach(b => b.addEventListener('click', () => { ui.histPeriod = Number(b.dataset.hdays); renderHistory(); }));
+  $('hist-chart-svg').addEventListener('click', e => { const g = e.target.closest('.h-bar'); if (g) { ui.histFocusDate = g.dataset.hdate; renderHistory(); } });
+  $('btn-hs-jump').addEventListener('click', e => { const d = e.target.dataset.jump; if (d) { ui.selectedDate = d; renderMeals(); switchTab('meals'); } });
+  $('hist-log-list').addEventListener('click', e => {
+    const jp = e.target.closest('.h-jump-day');
+    if (jp) { ui.selectedDate = jp.dataset.jump; renderMeals(); switchTab('meals'); return; }
+    const acc = e.target.closest('.h-acc');
+    if (acc) { const d = acc.dataset.hacc; ui.expandedHist.has(d)?ui.expandedHist.delete(d):ui.expandedHist.add(d); renderHistory(); }
+  });
+
+  $('btn-load-sample').addEventListener('click', () => {
+    const met = calcMetrics();
+    const sc = met.target / 2000;
+    const samples = [
+      [{ t:'breakfast', n:'オートミール＆ヨーグルト', cal:360, p:18, f:8, c:52 }, { t:'lunch', n:'鶏むね肉定食ランチ', cal:650, p:38, f:16, c:84 }, { t:'dinner', n:'鮭の塩焼き＆野菜味噌汁定食', cal:680, p:36, f:20, c:82 }],
+      [{ t:'breakfast', n:'全粒粉トースト＆目玉焼き', cal:410, p:19, f:16, c:46 }, { t:'lunch', n:'豚しゃぶサラダうどん', cal:620, p:30, f:18, c:80 }, { t:'dinner', n:'鶏の照り焼き＆冷奴定食', cal:740, p:42, f:22, c:88 }, { t:'snack', n:'プロテインバー', cal:180, p:15, f:7, c:14 }],
+      [{ t:'breakfast', n:'納豆卵かけご飯＆味噌汁', cal:430, p:22, f:12, c:58 }, { t:'lunch', n:'ツナとブロッコリーのパスタ', cal:690, p:28, f:20, c:94 }, { t:'dinner', n:'サバの味噌煮定食', cal:760, p:36, f:28, c:86 }],
+      [{ t:'breakfast', n:'バナナ＆無糖ヨーグルト', cal:290, p:12, f:4, c:50 }, { t:'lunch', n:'コンビニおにぎり2個＆サラダチキン', cal:510, p:33, f:6, c:78 }, { t:'dinner', n:'豚ロース生姜焼き定食', cal:810, p:36, f:30, c:92 }],
+      [{ t:'breakfast', n:'鮭おにぎり＆インスタント味噌汁', cal:340, p:14, f:5, c:58 }, { t:'lunch', n:'親子丼（ささみ）＆サラダ', cal:670, p:39, f:15, c:90 }, { t:'dinner', n:'タラのホイル蒸し＆雑穀ご飯', cal:610, p:34, f:14, c:82 }],
+      [{ t:'breakfast', n:'ハムチーズトースト＆コーヒー', cal:420, p:18, f:18, c:44 }, { t:'lunch', n:'牛赤身ステーキ丼（ご飯少なめ）', cal:780, p:42, f:26, c:88 }, { t:'dinner', n:'鶏つくね鍋＆雑炊', cal:650, p:38, f:18, c:78 }],
+      [{ t:'breakfast', n:'プロテインスムージー＆ゆで卵', cal:320, p:28, f:8, c:34 }, { t:'lunch', n:'和風おろしハンバーグ定食', cal:750, p:34, f:28, c:86 }, { t:'dinner', n:'豆腐と野菜のあんかけ定食', cal:620, p:30, f:16, c:84 }]
+    ];
+    for (let i = 7; i >= 1; i--) {
+      const ds = addDays(TODAY, -i);
+      const dl = ensureDateLog(ds);
+      dl.items = dl.items.filter(x => !x.isSample);
+      samples[7 - i].forEach(m => {
+        dl.items.push({
+          id:uid('smp'), timing:m.t, name:m.n,
+          calories:Math.round(m.cal * sc), protein:Math.round(m.p * sc), fat:Math.round(m.f * sc), carbs:Math.round(m.c * sc),
+          isEaten:true, isSample:true
+        });
+      });
+    }
+    if (!data.weightHistory.length) {
+      const baseW = Number(data.profile.weight) || 65;
+      [6,4,2,0].forEach((d, idx) => {
+        data.weightHistory.unshift({ id:uid('w'), date:addDays(TODAY,-d).replace(/-/g,'/'), weight:+(baseW + (3-idx)*0.2).toFixed(1), memo:'サンプル記録' });
+      });
+    }
+    renderAll(); toast('過去7日分のサンプルデータを読み込みました');
+  });
+  $('btn-clear-sample').addEventListener('click', () => {
+    Object.keys(data.logsByDate).forEach(ds => {
+      data.logsByDate[ds].items = (data.logsByDate[ds].items || []).filter(x => !x.isSample);
+    });
+    renderAll(); toast('サンプルデータを削除しました');
+  });
+
+  $('form-wlog').addEventListener('submit', e => {
+    e.preventDefault();
+    const w = parseFloat($('w-val-in').value); if (!w || w <= 0) return;
+    data.profile.weight = w;
+    data.weightHistory.unshift({ id:uid('w'), date:TODAY.replace(/-/g,'/'), weight:w, memo:$('w-memo').value.trim() });
+    $('w-memo').value=''; renderAll(); toast('体重を記録しました');
+  });
+  $('w-list').addEventListener('click', e => { const b = e.target.closest('.w-del'); if (b) { data.weightHistory = data.weightHistory.filter(x=>x.id!==b.dataset.wdel); renderAll(); } });
+
+  // Tab 4 操作（レシート写真・食材・身体データ・APIキー）
+  $('btn-rec-cam').addEventListener('click', () => $('in-rec-cam').click());
+  $('btn-rec-lib').addEventListener('click', () => $('in-rec-lib').click());
+  async function handleReceipt(file) {
+    if (!file) return;
+    $('rec-err').classList.add('hidden'); $('rec-loading').classList.remove('hidden');
+    try {
+      const { base64, dataUrl } = await resizeImg(file, 800, 0.75);
+      $('rec-load-thumb').src = dataUrl;
+      const items = await extractReceiptPhoto(base64);
+      $('rec-loading').classList.add('hidden');
+      if (!items.length) { $('rec-err').textContent = '食品を読み取れませんでした。'; $('rec-err').classList.remove('hidden'); return; }
+      ui.recReview = { thumb:dataUrl, items };
+      renderRecReview(); $('m-rec-rev').classList.remove('hidden');
+    } catch (e) {
+      $('rec-loading').classList.add('hidden');
+      $('rec-err').textContent = `解析失敗: ${e.message}`; $('rec-err').classList.remove('hidden');
+    }
+  }
+  function renderRecReview() {
+    $('rr-thumb').src = ui.recReview.thumb;
+    $('rr-cnt').textContent = ui.recReview.items.filter(i=>i.checked && i.name.trim()).length;
+    $('rr-list').innerHTML = ui.recReview.items.map((it, i) => `
+      <div class="p-2 rounded-xl border ${it.checked?'bg-emerald-50/40 border-emerald-200':'bg-slate-50 opacity-60'} space-y-1.5">
+        <div class="flex items-center gap-1.5">
+          <input type="checkbox" data-ri="${i}" ${it.checked?'checked':''} class="rr-chk w-4 h-4 accent-emerald-600" />
+          <input type="text" data-ri="${i}" value="${esc(it.name)}" class="rr-nm flex-1 min-w-0 rounded-lg border bg-white px-2 py-1 text-xs font-bold" />
+          <input type="text" data-ri="${i}" value="${esc(it.quantity)}" class="rr-qt w-16 rounded-lg border bg-white px-1.5 py-1 text-xs font-bold text-center" />
+        </div>
+        <div class="pl-5 flex justify-between items-center">
+          <select data-ri="${i}" class="rr-ct rounded border bg-white px-1.5 py-0.5 text-[10px] font-bold">${CATS.map(c=>`<option value="${c}" ${it.category===c?'selected':''}>${c}</option>`).join('')}</select>
+          <button type="button" data-rdel="${i}" class="rr-dl text-[10px] font-bold text-rose-500">削除</button>
+        </div>
+      </div>`).join('');
+  }
+  $('in-rec-cam').addEventListener('change', e => { const f = e.target.files?.[0]; e.target.value=''; handleReceipt(f); });
+  $('in-rec-lib').addEventListener('change', e => { const f = e.target.files?.[0]; e.target.value=''; handleReceipt(f); });
+  $('rr-list').addEventListener('input', e => {
+    const i = Number(e.target.dataset.ri); if (isNaN(i)) return;
+    if (e.target.classList.contains('rr-nm')) ui.recReview.items[i].name = e.target.value;
+    if (e.target.classList.contains('rr-qt')) ui.recReview.items[i].quantity = e.target.value;
+  });
+  $('rr-list').addEventListener('change', e => {
+    const i = Number(e.target.dataset.ri); if (isNaN(i)) return;
+    if (e.target.classList.contains('rr-chk')) { ui.recReview.items[i].checked = e.target.checked; renderRecReview(); }
+    if (e.target.classList.contains('rr-ct')) ui.recReview.items[i].category = e.target.value;
+  });
+  $('rr-list').addEventListener('click', e => { const b = e.target.closest('.rr-dl'); if (b) { ui.recReview.items.splice(Number(b.dataset.rdel),1); renderRecReview(); } });
+  $('btn-rr-add').addEventListener('click', () => { ui.recReview.items.push({ checked:true, name:'', quantity:'1個', category:'野菜・きのこ' }); renderRecReview(); });
+  $('btn-rr-commit').addEventListener('click', () => {
+    const add = ui.recReview.items.filter(i=>i.checked && i.name.trim()).map(i => ({ id:uid('ing'), name:i.name.trim(), quantity:i.quantity.trim(), category:i.category, used:false }));
+    if (!add.length) return toast('登録する食材を選択してください');
+    data.ingredients = [...add, ...data.ingredients]; closeModal('m-rec-rev'); renderAll(); toast(`${add.length}品登録しました`);
+  });
+
+  $('form-add-ing').addEventListener('submit', e => {
+    e.preventDefault(); const nm = $('ing-in-name').value.trim(); if (!nm) return;
+    data.ingredients.unshift({ id:uid('ing'), name:nm, quantity:$('ing-in-qty').value.trim(), category:$('ing-in-cat').value, used:false });
+    $('ing-in-name').value=''; $('ing-in-qty').value=''; renderAll(); toast(`「${nm}」を追加しました`);
+  });
+  $('ing-filters').addEventListener('click', e => { const b = e.target.closest('.i-cat'); if (b) { ui.ingFilter = b.dataset.icat; renderSettings(); } });
+  $('ing-list').addEventListener('click', e => {
+    const u = e.target.closest('.i-use'); if (u) { const x = data.ingredients.find(i=>i.id===u.dataset.iuse); if (x) { x.used=!x.used; renderAll(); } return; }
+    const d = e.target.closest('.i-del'); if (d) { data.ingredients = data.ingredients.filter(i=>i.id!==d.dataset.idel); renderAll(); }
+  });
+  $('ing-list').addEventListener('input', e => { if (e.target.classList.contains('i-qty')) { const x = data.ingredients.find(i=>i.id===e.target.dataset.iqty); if (x) { x.quantity=e.target.value; saveData(); } } });
+  $('btn-ing-del-used').addEventListener('click', () => { data.ingredients = data.ingredients.filter(i=>!i.used); renderAll(); toast('使い切り食材を削除しました'); });
+  $('btn-ing-clear').addEventListener('click', () => askConfirm('食材全削除', '手持ち食材をすべて削除しますか？', '削除', () => { data.ingredients=[]; renderAll(); toast('削除しました'); }));
+
+  ['p-weight','p-height','p-age'].forEach(id => $(id).addEventListener('input', e => {
+    const v = parseFloat(e.target.value); if (!v || v <= 0) return;
+    if (id==='p-weight') { data.profile.weight = v; $('w-val-in').value = v; }
+    if (id==='p-height') data.profile.height = v;
+    if (id==='p-age') data.profile.age = Math.round(v);
+    renderAll();
+  }));
+  document.querySelectorAll('.g-btn').forEach(b => b.addEventListener('click', () => { data.profile.gender = b.dataset.g; renderAll(); }));
+  document.querySelectorAll('.act-btn').forEach(b => b.addEventListener('click', () => { data.profile.activity = b.dataset.act; renderAll(); }));
+  document.querySelectorAll('.goal-btn').forEach(b => b.addEventListener('click', () => { data.profile.goal = b.dataset.goal; renderAll(); }));
+  $('p-custom-on').addEventListener('change', e => { data.profile.useCustom = e.target.checked; if (e.target.checked && !data.profile.customCal) data.profile.customCal = calcMetrics().autoTgt; renderAll(); });
+  $('p-custom-val').addEventListener('input', e => { const v = parseInt(e.target.value,10); if (v >= 500) { data.profile.customCal = v; renderAll(); } });
+  $('p-ratio-slider').addEventListener('input', e => { data.profile.dinnerRatio = Number(e.target.value)||40; renderAll(); });
+
+  $('btn-save-apikey').addEventListener('click', () => {
+    const k = $('in-api-key').value.trim();
+    try {
+      if (k) localStorage.setItem(API_KEY_STORAGE, k);
+      else localStorage.removeItem(API_KEY_STORAGE);
+    } catch {}
+    renderAll();
+    toast(k ? 'Gemini APIキーを保存しました' : 'APIキーをクリアしました');
+  });
+
+  $('btn-reset-all').addEventListener('click', () => askConfirm('全データを初期化', '過去の食事記録・献立・食材・体重履歴をすべて初期化しますか？', '初期化する', () => {
+    localStorage.removeItem(KEY);
+    data.profile = defaultProfile(); data.dinners = emptyDinners(); data.logsByDate = {}; data.ingredients = []; data.weightHistory = [];
+    renderAll(); toast('全データを初期化しました');
+  }));
+
+  // 初期表示
+  renderAll();
+  switchTab('dinners');
+})();
+</script>
+</body>
+</html>
