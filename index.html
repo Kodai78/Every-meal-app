@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="献立＆食事管理" />
+  <meta name="theme-color" content="#059669" />
+  <title>献立＆食事管理アプリ</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- ヘッダー -->
+    <header class="app-header">
+      <div class="header-inner">
+        <div>
+          <h1 id="header-title">食事管理</h1>
+          <p id="header-subtitle" class="header-sub">日本食品標準成分表ベース計算</p>
+        </div>
+        <div class="header-actions">
+          <a href="https://www.eiyoukeisan.com/" target="_blank" rel="noopener noreferrer" class="btn-chip-outline" title="簡単！栄養andカロリー計算を開く">
+            🔍 栄養計算サイト
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="main-content">
+
+      <!-- ================= タブ1: 食事管理 (月〜日) ================= -->
+      <section id="tab-meals" class="tab-panel active">
+        <!-- 曜日バー (月〜日) -->
+        <div class="weekday-strip" id="meal-weekday-strip"></div>
+
+        <!-- カロリー＆PFCサマリーカード -->
+        <div class="card dashboard-card">
+          <div class="dashboard-top">
+            <div>
+              <div class="date-label" id="selected-date-label"></div>
+              <div class="cal-main">
+                <span id="eaten-cal" class="cal-num">0</span>
+                <span class="cal-unit">/ <span id="target-cal-display">2000</span> kcal</span>
+              </div>
+              <div id="remaining-cal-badge" class="remaining-badge ok">残り 2000 kcal</div>
+            </div>
+            <div class="ring-wrap">
+              <svg class="ring-svg" viewBox="0 0 100 100">
+                <circle class="ring-bg" cx="50" cy="50" r="40" />
+                <circle id="ring-progress" class="ring-fg" cx="50" cy="50" r="40" stroke-dasharray="251.33" stroke-dashoffset="251.33" />
+              </svg>
+              <div class="ring-center">
+                <span id="ring-percent">0%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="pfc-bars">
+            <div class="pfc-item">
+              <div class="pfc-head"><span>P タンパク質</span><span id="p-val">0 / 0g</span></div>
+              <div class="bar-track"><div id="p-bar" class="bar-fill p-color"></div></div>
+            </div>
+            <div class="pfc-item">
+              <div class="pfc-head"><span>F 脂質</span><span id="f-val">0 / 0g</span></div>
+              <div class="bar-track"><div id="f-bar" class="bar-fill f-color"></div></div>
+            </div>
+            <div class="pfc-item">
+              <div class="pfc-head"><span>C 炭水化物</span><span id="c-val">0 / 0g</span></div>
+              <div class="bar-track"><div id="c-bar" class="bar-fill c-color"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 写真でカロリー算出＆手動追加アクション -->
+        <div class="action-grid">
+          <button type="button" class="btn-primary-card" id="btn-meal-camera">
+            <span class="btn-icon">📷</span>
+            <span>料理を撮って計算</span>
+          </button>
+          <button type="button" class="btn-secondary-card" id="btn-meal-album">
+            <span class="btn-icon">🖼️</span>
+            <span>写真から計算</span>
+          </button>
+          <button type="button" class="btn-outline-card" id="btn-meal-manual">
+            <span class="btn-icon">✏️</span>
+            <span>手入力 / AI推定</span>
+          </button>
+        </div>
+
+        <!-- 隠しファイル入力 (料理写真) -->
+        <input type="file" id="input-meal-camera" accept="image/*" capture="environment" class="hidden" />
+        <input type="file" id="input-meal-album" accept="image/*" class="hidden" />
+
+        <!-- 夕食献立との連動カード -->
+        <div id="linked-dinner-box" class="linked-dinner-box hidden"></div>
+
+        <!-- 食事ログリスト (朝・昼・夕・間食) -->
+        <div id="daily-meal-sections"></div>
+      </section>
+
+      <!-- ================= タブ2: 夕食献立 (月〜日) ================= -->
+      <section id="tab-menu" class="tab-panel">
+        <div class="card hero-menu-card">
+          <div class="hero-menu-head">
+            <div>
+              <h2>今週の夕食献立（月〜日）</h2>
+              <p class="muted-text">週1回の買い物食材から、必要な曜日だけAIが作成します</p>
+            </div>
+            <span id="pantry-count-pill" class="pill-emerald">食材 0品</span>
+          </div>
+          <div class="menu-cta-row">
+            <button type="button" class="btn-primary flex-1" id="btn-open-ai-menu">
+              ✨ 手持ち食材から作成
+            </button>
+            <button type="button" class="btn-outline" id="btn-open-recipe-search">
+              🔎 レシピ検索
+            </button>
+          </div>
+        </div>
+
+        <div id="weekly-menu-list" class="menu-list"></div>
+      </section>
+
+      <!-- ================= タブ3: 推移・履歴 ================= -->
+      <section id="tab-history" class="tab-panel">
+        <div class="segment-control" id="history-range-toggle">
+          <button type="button" class="seg-btn active" data-range="7">直近7日間</button>
+          <button type="button" class="seg-btn" data-range="30">直近30日間</button>
+        </div>
+
+        <!-- 期間サマリー -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">平均摂取</span>
+            <strong id="stat-avg-cal">0 kcal</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">記録日数</span>
+            <strong id="stat-logged-days">0 日</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">目標圏内</span>
+            <strong id="stat-hit-rate">0%</strong>
+          </div>
+        </div>
+
+        <!-- カロリー推移グラフ -->
+        <div class="card">
+          <div class="card-head-row">
+            <h3>日別摂取カロリー推移</h3>
+            <span class="muted-text small" id="chart-target-legend">破線: 目標</span>
+          </div>
+          <div id="calorie-chart-container" class="chart-scroll"></div>
+          <div class="avg-pfc-strip" id="stat-avg-pfc">平均PFC: P 0g / F 0g / C 0g</div>
+        </div>
+
+        <!-- 体重推移グラフ -->
+        <div class="card">
+          <div class="card-head-row">
+            <h3>体重の推移</h3>
+            <button type="button" class="btn-link" id="btn-quick-weight">+ 今日の体重を記録</button>
+          </div>
+          <div id="weight-chart-container"></div>
+        </div>
+
+        <!-- 日別食事履歴アコーディオン -->
+        <div class="card">
+          <div class="card-head-row">
+            <h3>日別の食事ログ履歴</h3>
+            <button type="button" class="btn-link" id="btn-load-sample-history">デモ履歴を追加</button>
+          </div>
+          <div id="history-log-list"></div>
+        </div>
+      </section>
+
+      <!-- ================= タブ4: 食材・設定 ================= -->
+      <section id="tab-settings" class="tab-panel">
+        <!-- 買い物レシート・食材写真取り込み -->
+        <div class="card">
+          <div class="card-head-row">
+            <h3>🛒 手持ち食材（買い物リスト）</h3>
+            <button type="button" class="btn-link" id="btn-add-pantry-manual">+ 手動追加</button>
+          </div>
+          <p class="muted-text small mb-8">レシートや買った食材を撮影すると、AIが食品だけ抽出して登録します。</p>
+          <div class="two-col-btns mb-12">
+            <button type="button" class="btn-primary" id="btn-receipt-camera">📷 レシート/食材を撮影</button>
+            <button type="button" class="btn-outline" id="btn-receipt-album">🖼️ 写真から選択</button>
+          </div>
+          <input type="file" id="input-receipt-camera" accept="image/*" capture="environment" class="hidden" />
+          <input type="file" id="input-receipt-album" accept="image/*" class="hidden" />
+
+          <div id="pantry-list" class="pantry-list"></div>
+        </div>
+
+        <!-- 身体データ・目標カロリー計算 -->
+        <div class="card">
+          <h3>⚖️ 身体データ・目安カロリー</h3>
+          <div class="target-hero-box">
+            <span class="muted-text small">1日の目安摂取カロリー</span>
+            <div class="target-hero-val"><span id="settings-target-cal">2000</span> kcal</div>
+            <div class="muted-text small" id="settings-bmr-tdee">基礎代謝: 0 kcal / 総消費: 0 kcal</div>
+          </div>
+
+          <div class="form-grid">
+            <label class="form-field">
+              <span>体重 (kg)</span>
+              <input type="number" id="prof-weight" step="0.1" inputmode="decimal" />
+            </label>
+            <label class="form-field">
+              <span>身長 (cm)</span>
+              <input type="number" id="prof-height" step="0.1" inputmode="decimal" />
+            </label>
+            <label class="form-field">
+              <span>年齢</span>
+              <input type="number" id="prof-age" inputmode="numeric" />
+            </label>
+            <label class="form-field">
+              <span>性別</span>
+              <select id="prof-gender">
+                <option value="male">男性</option>
+                <option value="female">女性</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="form-field mt-8">
+            <span>日常の活動レベル</span>
+            <select id="prof-activity">
+              <option value="1.2">低い（デスクワーク中心）</option>
+              <option value="1.55">普通（立ち仕事・週1〜3回の運動）</option>
+              <option value="1.725">高い（肉体労働・週4回以上の運動）</option>
+            </select>
+          </label>
+
+          <label class="form-field mt-8">
+            <span>目標</span>
+            <select id="prof-goal">
+              <option value="-400">減量（-400 kcal）</option>
+              <option value="0">現状維持（±0 kcal）</option>
+              <option value="300">増量（+300 kcal）</option>
+            </select>
+          </label>
+
+          <div class="toggle-row mt-12">
+            <span>目標カロリーを手動で指定する</span>
+            <input type="checkbox" id="prof-manual-toggle" class="switch-input" />
+          </div>
+          <label class="form-field mt-8 hidden" id="manual-cal-wrap">
+            <span>手動目標カロリー (kcal)</span>
+            <input type="number" id="prof-manual-cal" inputmode="numeric" />
+          </label>
+
+          <label class="form-field mt-12">
+            <span>夕食のカロリー目安配分: <strong id="dinner-ratio-label">40%</strong>（約 <span id="dinner-cal-guide">800</span> kcal）</span>
+            <input type="range" id="prof-dinner-ratio" min="30" max="50" step="5" />
+          </label>
+
+          <button type="button" class="btn-outline w-full mt-12" id="btn-save-weight-log">
+            現在の体重を履歴に記録する
+          </button>
+        </div>
+
+        <!-- Gemini APIキー設定 -->
+        <div class="card">
+          <h3>🔑 Gemini API 設定（写真解析・AI献立）</h3>
+          <p class="muted-text small mb-8">
+            Google AI Studio の無料APIキーを保存すると、料理写真・レシートの実画像認識と、日本食品標準成分表（八訂）ベースの食材グラム分解計算が有効になります。未設定時はデモAIで動作します。
+          </p>
+          <label class="form-field">
+            <span>Gemini API キー</span>
+            <input type="password" id="input-api-key" placeholder="AIzaSy..." autocomplete="off" />
+          </label>
+          <div class="two-col-btns mt-8">
+            <button type="button" class="btn-primary" id="btn-save-api-key">キーを保存</button>
+            <button type="button" class="btn-outline" id="btn-clear-api-key">クリア</button>
+          </div>
+          <div id="api-key-status" class="muted-text small mt-8"></div>
+        </div>
+
+        <!-- データ管理 -->
+        <div class="card">
+          <h3>🗂️ データ管理</h3>
+          <div class="two-col-btns">
+            <button type="button" class="btn-outline" id="btn-reset-week-menu">今週の献立をクリア</button>
+            <button type="button" class="btn-danger-outline" id="btn-reset-all">全データを初期化</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 下部タブナビゲーション -->
+    <nav class="bottom-nav">
+      <button type="button" class="nav-item active" data-tab="meals">
+        <span class="nav-icon">🍽️</span>
+        <span class="nav-label">食事管理</span>
+      </button>
+      <button type="button" class="nav-item" data-tab="menu">
+        <span class="nav-icon">📅</span>
+        <span class="nav-label">夕食献立</span>
+      </button>
+      <button type="button" class="nav-item" data-tab="history">
+        <span class="nav-icon">📊</span>
+        <span class="nav-label">推移・履歴</span>
+      </button>
+      <button type="button" class="nav-item" data-tab="settings">
+        <span class="nav-icon">🛒</span>
+        <span class="nav-label">食材・設定</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- ================= モーダル群 ================= -->
+
+  <!-- 1. 食事の追加・写真解析確認モーダル -->
+  <div id="modal-meal" class="modal-backdrop hidden">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <h3 id="modal-meal-title">食事を記録</h3>
+        <button type="button" class="modal-close" data-close="modal-meal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="meal-photo-preview-wrap" class="photo-preview-wrap hidden">
+          <img id="meal-photo-preview" alt="料理写真プレビュー" />
+          <div id="meal-ai-note" class="ai-note-box"></div>
+        </div>
+
+        <label class="form-field">
+          <span>時間帯</span>
+          <select id="meal-input-timing">
+            <option value="breakfast">朝食</option>
+            <option value="lunch">昼食</option>
+            <option value="dinner">夕食</option>
+            <option value="snack">間食・その他</option>
+          </select>
+        </label>
+
+        <label class="form-field mt-8">
+          <span>料理名・内容</span>
+          <div class="input-with-btn">
+            <input type="text" id="meal-input-name" placeholder="例：鶏むね肉の照り焼きとご飯150g" />
+            <button type="button" class="btn-ai-inline" id="btn-estimate-text-cal">✨ AI計算</button>
+          </div>
+        </label>
+
+        <!-- 方法3: eiyoukeisan.com 検索リンク -->
+        <div class="eiyou-link-bar mt-8">
+          <button type="button" class="btn-eiyou-search" id="btn-eiyou-meal-search">
+            🔍 「簡単！栄養andカロリー計算」で調べる
+          </button>
+        </div>
+
+        <!-- 方法1: 成分表ベース食材グラム分解内訳 -->
+        <div id="meal-breakdown-wrap" class="breakdown-box hidden mt-8">
+          <div class="breakdown-head">
+            <span>📋 日本食品標準成分表ベース内訳</span>
+            <span class="muted-text small">自動合算</span>
+          </div>
+          <ul id="meal-breakdown-list" class="breakdown-list"></ul>
+        </div>
+
+        <div class="form-grid mt-8">
+          <label class="form-field">
+            <span>カロリー (kcal)</span>
+            <input type="number" id="meal-input-cal" inputmode="numeric" />
+          </label>
+          <label class="form-field">
+            <span>P タンパク質 (g)</span>
+            <input type="number" id="meal-input-p" step="0.1" inputmode="decimal" />
+          </label>
+          <label class="form-field">
+            <span>F 脂質 (g)</span>
+            <input type="number" id="meal-input-f" step="0.1" inputmode="decimal" />
+          </label>
+          <label class="form-field">
+            <span>C 炭水化物 (g)</span>
+            <input type="number" id="meal-input-c" step="0.1" inputmode="decimal" />
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-primary w-full" id="btn-save-meal-entry">この内容で記録する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. AI夕食献立作成モーダル (除外曜日選択) -->
+  <div id="modal-ai-menu" class="modal-backdrop hidden">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <h3>✨ 夕食献立をAI作成</h3>
+        <button type="button" class="modal-close" data-close="modal-ai-menu">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="muted-text small mb-8">夕食を作成する曜日を選んでください（タップで「除く」に切替）。</p>
+        <div class="day-toggle-grid" id="ai-menu-day-toggles"></div>
+
+        <label class="form-field mt-12">
+          <span>希望・条件（任意）</span>
+          <input type="text" id="ai-menu-pref" placeholder="例：調理20分以内、高タンパク、和食多め" />
+        </label>
+
+        <div class="info-pill-box mt-12">
+          <div>📦 使用する手持ち食材：<strong id="ai-menu-pantry-summary">0品</strong></div>
+          <div>🎯 1食の目安カロリー：<strong id="ai-menu-cal-guide">800 kcal</strong>（成分表ベース計算）</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-primary w-full" id="btn-run-ai-menu">選んだ曜日の献立を作成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. 夕食献立 手動編集モーダル -->
+  <div id="modal-edit-dinner" class="modal-backdrop hidden">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <h3 id="modal-edit-dinner-title">夕食献立を編集</h3>
+        <button type="button" class="modal-close" data-close="modal-edit-dinner">✕</button>
+      </div>
+      <div class="modal-body">
+        <label class="form-field">
+          <span>メニュー名</span>
+          <div class="input-with-btn">
+            <input type="text" id="edit-dinner-name" placeholder="例：鮭の塩焼き・具だくさん味噌汁・ご飯" />
+            <button type="button" class="btn-ai-inline" id="btn-estimate-dinner-cal">✨ AI計算</button>
+          </div>
+        </label>
+
+        <div class="eiyou-link-bar mt-8">
+          <button type="button" class="btn-eiyou-search" id="btn-eiyou-dinner-search">
+            🔍 「簡単！栄養andカロリー計算」で調べる
+          </button>
+        </div>
+
+        <label class="form-field mt-8">
+          <span>使う食材・メモ</span>
+          <input type="text" id="edit-dinner-ingredients" placeholder="例：鮭切り身 100g、豆腐 100g、白米 150g" />
+        </label>
+
+        <div class="form-grid mt-8">
+          <label class="form-field">
+            <span>カロリー (kcal)</span>
+            <input type="number" id="edit-dinner-cal" inputmode="numeric" />
+          </label>
+          <label class="form-field">
+            <span>P (g)</span>
+            <input type="number" id="edit-dinner-p" step="0.1" inputmode="decimal" />
+          </label>
+          <label class="form-field">
+            <span>F (g)</span>
+            <input type="number" id="edit-dinner-f" step="0.1" inputmode="decimal" />
+          </label>
+          <label class="form-field">
+            <span>C (g)</span>
+            <input type="number" id="edit-dinner-c" step="0.1" inputmode="decimal" />
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-primary w-full" id="btn-save-edit-dinner">献立を保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. レシピ検索 ＆ 栄養計算サイト確認モーダル -->
+  <div id="modal-recipe" class="modal-backdrop hidden">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <h3>🔎 レシピ検索・栄養確認</h3>
+        <button type="button" class="modal-close" data-close="modal-recipe">✕</button>
+      </div>
+      <div class="modal-body">
+        <label class="form-field">
+          <span>検索キーワード（食材・料理名）</span>
+          <input type="text" id="recipe-search-keyword" placeholder="例：鶏むね肉 ヘルシー" />
+        </label>
+        <div id="recipe-pantry-chips" class="chip-wrap mt-8"></div>
+
+        <div class="recipe-site-grid mt-12">
+          <button type="button" class="btn-site" data-site="cookpad">クックパッド</button>
+          <button type="button" class="btn-site" data-site="kurashiru">クラシル</button>
+          <button type="button" class="btn-site" data-site="delish">デリッシュキッチン</button>
+          <button type="button" class="btn-site btn-site-eiyou" data-site="eiyou">栄養andカロリー計算</button>
+        </div>
+
+        <hr class="divider" />
+        <h4 class="mb-8">決まったレシピを夕食献立に登録</h4>
+        <label class="form-field">
+          <span>登録する曜日</span>
+          <select id="recipe-target-day"></select>
+        </label>
+        <label class="form-field mt-8">
+          <span>料理名</span>
+          <div class="input-with-btn">
+            <input type="text" id="recipe-import-name" placeholder="見つけたメニュー名を入力" />
+            <button type="button" class="btn-ai-inline" id="btn-estimate-recipe-cal">✨ AI計算</button>
+          </div>
+        </label>
+        <div class="form-grid mt-8">
+          <label class="form-field">
+            <span>カロリー (kcal)</span>
+            <input type="number" id="recipe-import-cal" inputmode="numeric" value="600" />
+          </label>
+          <label class="form-field">
+            <span>P (g)</span>
+            <input type="number" id="recipe-import-p" step="0.1" value="30" />
+          </label>
+          <label class="form-field">
+            <span>F (g)</span>
+            <input type="number" id="recipe-import-f" step="0.1" value="18" />
+          </label>
+          <label class="form-field">
+            <span>C (g)</span>
+            <input type="number" id="recipe-import-c" step="0.1" value="70" />
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-primary w-full" id="btn-import-recipe">この曜日の夕食に登録</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. レシート・食材写真 抽出確認モーダル -->
+  <div id="modal-receipt" class="modal-backdrop hidden">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <h3>🛒 抽出した食材を確認</h3>
+        <button type="button" class="modal-close" data-close="modal-receipt">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="muted-text small mb-8">登録する食品にチェックを入れ、必要に応じて名称や分量を修正してください。</p>
+        <div id="receipt-extracted-list" class="extracted-list"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-primary w-full" id="btn-confirm-receipt-items">手持ち食材に追加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ローディングオーバーレイ -->
+  <div id="loading-overlay" class="loading-overlay hidden">
+    <div class="loading-card">
+      <div class="spinner"></div>
+      <p id="loading-text">AIが成分表ベースで計算中...</p>
+    </div>
+  </div>
+
+  <!-- トースト通知 -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
