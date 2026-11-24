@@ -4,7 +4,13 @@
   // ================= 定数・設定 =================
   const STORAGE_KEY = 'meal_planner_split_v1';
   const API_KEY_STORAGE = 'meal_planner_gemini_key';
-  const GEMINI_MODEL = 'gemini-2.5-flash';
+  const MODEL_CACHE_STORAGE = 'meal_planner_gemini_model';
+  const FALLBACK_MODELS = [
+    'gemini-flash-latest',
+    'gemini-3-flash-preview',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash'
+  ];
 
   const WEEKDAYS = [
     { key: 'mon', label: '月', full: '月曜日' },
@@ -213,9 +219,65 @@
     });
   }
 
-  // ================= Gemini API 通信 =================
+  // ================= Gemini API 通信（最新モデル自動選択・フォールバック対応） =================
   function getApiKey() {
     return (localStorage.getItem(API_KEY_STORAGE) || '').trim();
+  }
+
+  function scoreGeminiModel(modelId) {
+    const verMatch = modelId.match(/^gemini-(\d+(?:\.\d+)?)/);
+    const ver = verMatch ? parseFloat(verMatch[1]) : 0;
+    const isFlash = /flash/i.test(modelId) ? 1 : 0;
+    const isStandardSize = /lite|8b/i.test(modelId) ? 0 : 1;
+    const isStable = /preview|exp/i.test(modelId) ? 0 : 1;
+    const isLatestAlias = modelId === 'gemini-flash-latest' ? 1 : 0;
+    return [isFlash, ver, isStandardSize, isStable, isLatestAlias];
+  }
+
+  async function discoverAvailableModels(apiKey) {
+    try {
+      const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(listUrl);
+      if (!res.ok) return [];
+      const data = await res.json();
+      const models = Array.isArray(data.models) ? data.models : [];
+
+      return models
+        .filter(m =>
+          Array.isArray(m.supportedGenerationMethods) &&
+          m.supportedGenerationMethods.includes('generateContent')
+        )
+        .map(m => String(m.name || '').replace(/^models\//, ''))
+        .filter(id =>
+          id.startsWith('gemini-') &&
+          !/embedding|aqa|imagen|veo|tts|audio|robotics|computer-use|deep-research|gemma/i.test(id)
+        )
+        .sort((a, b) => {
+          const sa = scoreGeminiModel(a);
+          const sb = scoreGeminiModel(b);
+          for (let i = 0; i < sa.length; i++) {
+            if (sb[i] !== sa[i]) return sb[i] - sa[i];
+          }
+          return b.localeCompare(a);
+        });
+    } catch {
+      return [];
+    }
+  }
+
+  async function requestGenerateContent(apiKey, modelId, parts) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    return fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.25
+        }
+      })
+    });
   }
 
   async function callGeminiJSON(promptText, base64DataUrl = null) {
@@ -228,28 +290,66 @@
       parts.push({ inlineData: { mimeType: 'image/jpeg', data: base64 } });
     }
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.25
-        }
-      })
-    });
+    // 1. 前回成功したモデルがキャッシュされていれば最優先で試す
+    const cachedModel = (localStorage.getItem(MODEL_CACHE_STORAGE) || '').trim();
+    const candidates = [];
+    if (cachedModel) candidates.push(cachedModel);
 
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`APIエラー (${res.status}): ${errText.slice(0, 100)}`);
+    // 2. キャッシュがない場合はAPIから利用可能な最新モデル一覧を取得して並べる
+    if (!cachedModel) {
+      const discovered = await discoverAvailableModels(apiKey);
+      discovered.forEach(m => { if (!candidates.includes(m)) candidates.push(m); });
+      FALLBACK_MODELS.forEach(m => { if (!candidates.includes(m)) candidates.push(m); });
     }
 
-    const data = await res.json();
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const cleaned = rawText.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
-    return JSON.parse(cleaned);
+    let lastError = null;
+    let triedDiscovery = !cachedModel;
+
+    while (candidates.length > 0) {
+      const modelId = candidates.shift();
+      const res = await requestGenerateContent(apiKey, modelId, parts);
+
+      if (res.ok) {
+        if (cachedModel !== modelId) {
+          localStorage.setItem(MODEL_CACHE_STORAGE, modelId);
+        }
+        const data = await res.json();
+        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const cleaned = rawText.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+        return JSON.parse(cleaned);
+      }
+
+      const errText = await res.text();
+      lastError = new Error(`APIエラー (${res.status}): ${errText.slice(0, 120)}`);
+
+      // 認証・権限エラー(401/403)はモデル変更では直らないため即終了
+      if (res.status === 401 || res.status === 403) {
+        throw lastError;
+      }
+
+      // モデル終了・未対応(404/400)ならキャッシュを破棄し、最新モデル一覧を再取得して次の候補へ
+      if (res.status === 404 || res.status === 400) {
+        localStorage.removeItem(MODEL_CACHE_STORAGE);
+        if (!triedDiscovery) {
+          triedDiscovery = true;
+          const discovered = await discoverAvailableModels(apiKey);
+          discovered.forEach(m => {
+            if (m !== modelId && !candidates.includes(m)) candidates.push(m);
+          });
+          FALLBACK_MODELS.forEach(m => {
+            if (m !== modelId && !candidates.includes(m)) candidates.push(m);
+          });
+        }
+        continue;
+      }
+
+      // その他のエラー(429/503等)は別モデル候補が残っていればフォールバック
+      if (candidates.length === 0) {
+        throw lastError;
+      }
+    }
+
+    throw lastError || new Error('利用可能なGeminiモデルが見つかりませんでした');
   }
 
   // ================= AI 機能（方法1準拠） =================
@@ -498,7 +598,7 @@ ${NUTRITION_SYSTEM_RULE}
         showToast('デモ献立を作成しました（APIキー設定で実AI生成）');
       }
 
-      // 選択されなかった曜日は「除外」にマーク（1括作成時のみ）
+      // 選択されなかった曜日は「除外」にマーク（一括作成時のみ）
       if (targetDays.length > 1) {
         WEEKDAYS.forEach(w => {
           state.weeklyMenu[w.key].excluded = !targetDays.includes(w.key);
@@ -874,11 +974,12 @@ ${NUTRITION_SYSTEM_RULE}
     $('#dinner-ratio-label').textContent = `${p.dinnerRatio || 40}%`;
     $('#dinner-cal-guide').textContent = dinnerGuide;
 
-    // APIキー状態
+    // APIキー＆自動選択モデル状態
     const savedKey = getApiKey();
+    const activeModel = (localStorage.getItem(MODEL_CACHE_STORAGE) || '').trim();
     $('#input-api-key').value = savedKey;
     $('#api-key-status').textContent = savedKey
-      ? '✅ APIキー設定済み（実画像の成分表解析・実AI献立生成が有効）'
+      ? `✅ APIキー設定済み（使用モデル: ${activeModel || '最新モデルを自動選択'}）`
       : 'ℹ️ 未設定（現在はデモAIモードで動作中）';
   }
 
@@ -1378,12 +1479,14 @@ ${NUTRITION_SYSTEM_RULE}
     $('#btn-save-api-key').addEventListener('click', () => {
       const val = $('#input-api-key').value.trim();
       localStorage.setItem(API_KEY_STORAGE, val);
+      localStorage.removeItem(MODEL_CACHE_STORAGE);
       renderSettingsTab();
       showToast('Gemini APIキーを保存しました');
     });
 
     $('#btn-clear-api-key').addEventListener('click', () => {
       localStorage.removeItem(API_KEY_STORAGE);
+      localStorage.removeItem(MODEL_CACHE_STORAGE);
       renderSettingsTab();
       showToast('APIキーをクリアしました');
     });
