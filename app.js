@@ -4,12 +4,11 @@
   // ================= 定数・設定 =================
   const STORAGE_KEY = 'meal_planner_split_v1';
   const API_KEY_STORAGE = 'meal_planner_gemini_key';
-  const MODEL_CACHE_STORAGE = 'meal_planner_gemini_model_v3';
+  const MODEL_CACHE_STORAGE = 'meal_planner_gemini_model_v4';
   const FALLBACK_MODELS = [
     'gemini-flash-latest',
-    'gemini-3-flash-preview',
     'gemini-2.5-flash-lite',
-    'gemini-pro-latest'
+    'gemini-3-flash-preview'
   ];
 
   const WEEKDAYS = [
@@ -32,7 +31,7 @@
   // カロリー・栄養価算出の共通ルール（検索情報＋日本食品標準成分表ベース）
   const NUTRITION_SYSTEM_RULE = [
     'あなたは日本の食事・外食・栄養価に詳しい管理栄養士です。',
-    '外食チェーン（サイゼリヤ、吉野家、マック等）・コンビニ商品・ラーメン（二郎系ラーメン等）・一般的な家庭料理について、Google検索結果の公式栄養成分や一般的な1人前の実態データ、および文部科学省「日本食品標準成分表（八訂）」を基準に現実的で納得感のある大まかなカロリー(kcal)とPFC(g)を算出してください。',
+    '外食チェーン（サイゼリヤ、吉野家、マック等）・コンビニ商品・ラーメン（二郎系ラーメン等）・一般的な家庭料理について、公式栄養成分や一般的な1人前の実態データ、および文部科学省「日本食品標準成分表（八訂）」を基準に現実的で納得感のある大まかなカロリー(kcal)とPFC(g)を算出してください。',
     '料理名に分量指定がない場合は、日本で一般的な1人前（例：ラーメン二郎・全マシなら麺300g・ブタ2枚・ヤサイマシ・アブラマシ想定など）を基準にし、何を想定したかをメモに簡潔に記載してください。'
   ].join('\n');
 
@@ -165,7 +164,7 @@
     toastTimer = setTimeout(() => el.classList.add('hidden'), 3200);
   }
 
-  function setLoading(show, text = 'AIが検索・カロリー計算中...') {
+  function setLoading(show, text = 'AIがカロリー計算中...') {
     $('#loading-text').textContent = text;
     $('#loading-overlay').classList.toggle('hidden', !show);
   }
@@ -217,9 +216,17 @@
     });
   }
 
-  // ================= Gemini API 通信（Web検索＆柔軟パース＆最新モデル自動選択） =================
+  // ================= Gemini API 通信（無料枠対応・429自動回避・Flash優先） =================
   function getApiKey() {
     return (localStorage.getItem(API_KEY_STORAGE) || '').trim();
+  }
+
+  function isDeprecatedOrProModel(id) {
+    return (
+      /^gemini-(1\.0|1\.5|2\.0|2\.5-flash$)/i.test(id) ||
+      /pro/i.test(id) ||
+      /embedding|aqa|imagen|veo|tts|audio|robotics|computer-use|deep-research|gemma|bisect/i.test(id)
+    );
   }
 
   function scoreGeminiModel(modelId) {
@@ -227,12 +234,11 @@
     const ver = verMatch ? parseFloat(verMatch[1]) : 0;
     const isLatestAlias = modelId === 'gemini-flash-latest' ? 1 : 0;
     const isFlash = /flash/i.test(modelId) ? 1 : 0;
-    const isNotLite = /lite|8b/i.test(modelId) ? 0 : 1;
     const isStable = /preview|exp/i.test(modelId) ? 0 : 1;
-    return [isLatestAlias, ver, isFlash, isNotLite, isStable];
+    return [isLatestAlias, isFlash, isStable, ver];
   }
 
-  async function discoverAvailableModels(apiKey) {
+  async function discoverAvailableFlashModels(apiKey) {
     try {
       const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key=${encodeURIComponent(apiKey)}`;
       const res = await fetch(listUrl);
@@ -246,11 +252,7 @@
           m.supportedGenerationMethods.includes('generateContent')
         )
         .map(m => String(m.name || '').replace(/^models\//, ''))
-        .filter(id =>
-          id.startsWith('gemini-') &&
-          !/^gemini-(1\.0|1\.5|2\.0|2\.5-flash$)/i.test(id) &&
-          !/embedding|aqa|imagen|veo|tts|audio|robotics|computer-use|deep-research|gemma|bisect/i.test(id)
-        )
+        .filter(id => id.startsWith('gemini-') && /flash/i.test(id) && !isDeprecatedOrProModel(id))
         .sort((a, b) => {
           const sa = scoreGeminiModel(a);
           const sb = scoreGeminiModel(b);
@@ -258,7 +260,8 @@
             if (sb[i] !== sa[i]) return sb[i] - sa[i];
           }
           return b.localeCompare(a);
-        });
+        })
+        .slice(0, 4);
     } catch {
       return [];
     }
@@ -274,18 +277,15 @@
     if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) {
       throw new Error('AI応答の形式を解析できませんでした');
     }
-    // 数値内の桁区切りカンマ（例: "calories": 1,550）を除去してJSON.parseを安定させる
     const jsonSlice = stripped
       .slice(firstBrace, lastBrace + 1)
       .replace(/:\s*(\d{1,3}),(\d{3})(?=\s*[,}\]])/g, ': $1$2');
     return JSON.parse(jsonSlice);
   }
 
-  // キー:値テキストとJSONの両方から栄養価データを確実に抽出するパーサー
   function parseNutritionResponse(rawText) {
     const text = String(rawText || '').trim();
 
-    // 1. まずJSONが含まれていればそちらを優先解析
     try {
       const obj = extractJsonObject(text);
       const cal = Number(String(obj.calories ?? '').replace(/,/g, ''));
@@ -301,10 +301,9 @@
         };
       }
     } catch {
-      // JSONでない場合は下の行ベース抽出へ進む
+      // 行ベース抽出へ進む
     }
 
-    // 2. 行ベース（KEY: VALUE 形式や自然文）から数値を抽出
     const grabNum = (patterns) => {
       for (const re of patterns) {
         const m = text.match(re);
@@ -388,12 +387,22 @@
     });
   }
 
+  function formatApiErrorMessage(status, errText) {
+    if (status === 429) {
+      return '無料枠の利用上限（429）に達しました。1分ほど待ってからもう一度「AI計算」を押してください。';
+    }
+    if (status === 401 || status === 403) {
+      return 'APIキーの認証エラーです。「食材・設定」タブで正しいGemini APIキーを確認してください。';
+    }
+    return `APIエラー (${status}): ${errText.slice(0, 100)}`;
+  }
+
   async function callGemini(promptText, base64DataUrl = null, options = {}) {
     const apiKey = getApiKey();
     if (!apiKey) return null;
 
     const useSearch = !!options.useSearch;
-    const parserMode = options.parser || 'json'; // 'nutrition' | 'json'
+    const parserMode = options.parser || 'json';
     const parts = [{ text: promptText }];
     if (base64DataUrl) {
       const base64 = base64DataUrl.split(',')[1];
@@ -402,26 +411,23 @@
 
     const cachedModel = (localStorage.getItem(MODEL_CACHE_STORAGE) || '').trim();
     const candidates = [];
-    if (cachedModel && !/^gemini-(1\.0|1\.5|2\.0|2\.5-flash$)/i.test(cachedModel)) {
+    if (cachedModel && !isDeprecatedOrProModel(cachedModel)) {
       candidates.push(cachedModel);
     }
+    FALLBACK_MODELS.forEach(m => {
+      if (!candidates.includes(m)) candidates.push(m);
+    });
 
-    if (candidates.length === 0) {
-      const discovered = await discoverAvailableModels(apiKey);
-      discovered.forEach(m => { if (!candidates.includes(m)) candidates.push(m); });
-      FALLBACK_MODELS.forEach(m => { if (!candidates.includes(m)) candidates.push(m); });
-    }
-
-    let lastError = null;
-    let triedDiscovery = candidates.length > 1;
+    let firstMeaningfulError = null;
+    let triedDiscovery = false;
 
     while (candidates.length > 0) {
       const modelId = candidates.shift();
       let res = await requestGenerateContent(apiKey, modelId, parts, useSearch, parserMode === 'json');
       let usedSearchActually = useSearch;
 
-      // 検索ツールが400エラーの場合は同じモデルで検索オフにして再試行
-      if (!res.ok && useSearch && res.status === 400) {
+      // 無料枠でWeb検索(google_search)が429または400で弾かれた場合、同じモデルの標準AIモード(検索なし)で即再試行
+      if (!res.ok && useSearch && (res.status === 429 || res.status === 400)) {
         res = await requestGenerateContent(apiKey, modelId, parts, false, parserMode === 'json');
         usedSearchActually = false;
       }
@@ -448,21 +454,20 @@
       }
 
       const errText = await res.text();
-      lastError = new Error(`APIエラー (${res.status}): ${errText.slice(0, 120)}`);
-
-      if (res.status === 401 || res.status === 403) {
-        throw lastError;
+      if (!firstMeaningfulError) {
+        firstMeaningfulError = new Error(formatApiErrorMessage(res.status, errText));
       }
 
-      if (res.status === 404 || res.status === 400) {
+      if (res.status === 401 || res.status === 403) {
+        throw firstMeaningfulError;
+      }
+
+      if (res.status === 404 || res.status === 429 || res.status === 400) {
         localStorage.removeItem(MODEL_CACHE_STORAGE);
-        if (!triedDiscovery) {
+        if (!triedDiscovery && candidates.length === 0) {
           triedDiscovery = true;
-          const discovered = await discoverAvailableModels(apiKey);
+          const discovered = await discoverAvailableFlashModels(apiKey);
           discovered.forEach(m => {
-            if (m !== modelId && !candidates.includes(m)) candidates.push(m);
-          });
-          FALLBACK_MODELS.forEach(m => {
             if (m !== modelId && !candidates.includes(m)) candidates.push(m);
           });
         }
@@ -470,11 +475,11 @@
       }
 
       if (candidates.length === 0) {
-        throw lastError;
+        throw firstMeaningfulError;
       }
     }
 
-    throw lastError || new Error('利用可能なGeminiモデルが見つかりませんでした');
+    throw firstMeaningfulError || new Error('利用可能なGeminiモデルが見つかりませんでした');
   }
 
   // ================= AI 機能 =================
@@ -547,7 +552,7 @@ BREAKDOWN:
     }
     setLoading(true, `「${dishName.trim()}」のカロリーをAI検索・計算中...`);
     try {
-      const prompt = `以下の食事・メニューについて、Google検索で公式栄養成分や一般的な1人前の栄養価を調べたうえで、大まかで実用的なカロリー(kcal)とPFC(g)を算出してください。
+      const prompt = `以下の食事・メニューについて、公式栄養成分や一般的な1人前の栄養価をもとに、大まかで実用的なカロリー(kcal)とPFC(g)を算出してください。
 
 対象メニュー・食事: 「${dishName.trim()}」
 ${NUTRITION_SYSTEM_RULE}
@@ -569,18 +574,18 @@ BREAKDOWN:
           p: 28.5,
           f: 16.0,
           c: 72.0,
-          note: '※APIキー未設定のためデモ値です。「食材・設定」タブでAPIキーを保存するとAI検索による実計算に切り替わります。',
+          note: '※APIキー未設定のためデモ値です。「食材・設定」タブでAPIキーを保存するとAI計算に切り替わります。',
           breakdown: [
             { item: '主菜（肉・魚 推定120g）', grams: 120, calories: 230 },
             { item: '主食（ご飯・麺 推定150g）', grams: 150, calories: 240 },
             { item: '野菜・調理油・調味料', grams: 80, calories: 90 }
           ]
         };
-        showToast('デモ計算を反映しました（APIキー設定でAI検索計算）');
+        showToast('デモ計算を反映しました（APIキー設定でAI計算）');
       }
       return res;
     } catch (err) {
-      showToast('AI計算エラー: ' + err.message);
+      showToast(err.message);
       return { _error: err.message };
     } finally {
       setLoading(false);
@@ -1096,7 +1101,7 @@ ${NUTRITION_SYSTEM_RULE}
     const activeModel = (localStorage.getItem(MODEL_CACHE_STORAGE) || '').trim();
     $('#input-api-key').value = savedKey;
     $('#api-key-status').textContent = savedKey
-      ? `✅ APIキー設定済み（Web検索＋AI計算有効 / モデル: ${activeModel || '最新モデルを自動選択'}）`
+      ? `✅ APIキー設定済み（AI計算有効 / モデル: ${activeModel || 'Flash最新モデル自動選択'}）`
       : 'ℹ️ 未設定（現在はデモAIモードで動作中）';
   }
 
@@ -1333,7 +1338,6 @@ ${NUTRITION_SYSTEM_RULE}
     });
     $('#btn-meal-manual').addEventListener('click', () => openMealModal({ title: '食事を手入力 / AI検索計算' }));
 
-    // 食事モーダル内: AI検索カロリー計算 & eiyoukeisan.com検索 & 保存
     $('#btn-estimate-text-cal').addEventListener('click', async () => {
       const res = await estimateNutritionFromText($('#meal-input-name').value);
       if (!res) return;
