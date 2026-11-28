@@ -4,12 +4,12 @@
   // ================= 定数・設定 =================
   const STORAGE_KEY = 'meal_planner_split_v1';
   const API_KEY_STORAGE = 'meal_planner_gemini_key';
-  const MODEL_CACHE_STORAGE = 'meal_planner_gemini_model_v2';
+  const MODEL_CACHE_STORAGE = 'meal_planner_gemini_model_v3';
   const FALLBACK_MODELS = [
     'gemini-flash-latest',
     'gemini-3-flash-preview',
-    'gemini-2.5-flash',
-    'gemini-2.0-flash'
+    'gemini-2.5-flash-lite',
+    'gemini-pro-latest'
   ];
 
   const WEEKDAYS = [
@@ -33,8 +33,7 @@
   const NUTRITION_SYSTEM_RULE = [
     'あなたは日本の食事・外食・栄養価に詳しい管理栄養士です。',
     '外食チェーン（サイゼリヤ、吉野家、マック等）・コンビニ商品・ラーメン（二郎系ラーメン等）・一般的な家庭料理について、Google検索結果の公式栄養成分や一般的な1人前の実態データ、および文部科学省「日本食品標準成分表（八訂）」を基準に現実的で納得感のある大まかなカロリー(kcal)とPFC(g)を算出してください。',
-    '料理名に分量指定がない場合は、日本で一般的な1人前（例：二郎系ラーメンなら標準サイズ・麺300g・ブタ2枚・ヤサイ普通など）を想定し、何を基準に計算したかをnoteに簡潔に記載してください。',
-    '構成要素ごとの目安グラム数とカロリー内訳(breakdown)も作成し、内訳の合計と全体の数値が概ね整合するように出力してください。'
+    '料理名に分量指定がない場合は、日本で一般的な1人前（例：ラーメン二郎・全マシなら麺300g・ブタ2枚・ヤサイマシ・アブラマシ想定など）を基準にし、何を想定したかをメモに簡潔に記載してください。'
   ].join('\n');
 
   // ================= 状態管理 =================
@@ -218,7 +217,7 @@
     });
   }
 
-  // ================= Gemini API 通信（Web検索グラウンディング＆最新モデル自動選択対応） =================
+  // ================= Gemini API 通信（Web検索＆柔軟パース＆最新モデル自動選択） =================
   function getApiKey() {
     return (localStorage.getItem(API_KEY_STORAGE) || '').trim();
   }
@@ -226,16 +225,16 @@
   function scoreGeminiModel(modelId) {
     const verMatch = modelId.match(/^gemini-(\d+(?:\.\d+)?)/);
     const ver = verMatch ? parseFloat(verMatch[1]) : 0;
-    const isFlash = /flash/i.test(modelId) ? 1 : 0;
-    const isStandardSize = /lite|8b/i.test(modelId) ? 0 : 1;
     const isLatestAlias = modelId === 'gemini-flash-latest' ? 1 : 0;
+    const isFlash = /flash/i.test(modelId) ? 1 : 0;
+    const isNotLite = /lite|8b/i.test(modelId) ? 0 : 1;
     const isStable = /preview|exp/i.test(modelId) ? 0 : 1;
-    return [isFlash, isLatestAlias, ver, isStandardSize, isStable];
+    return [isLatestAlias, ver, isFlash, isNotLite, isStable];
   }
 
   async function discoverAvailableModels(apiKey) {
     try {
-      const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`;
+      const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key=${encodeURIComponent(apiKey)}`;
       const res = await fetch(listUrl);
       if (!res.ok) return [];
       const data = await res.json();
@@ -249,7 +248,8 @@
         .map(m => String(m.name || '').replace(/^models\//, ''))
         .filter(id =>
           id.startsWith('gemini-') &&
-          !/embedding|aqa|imagen|veo|tts|audio|robotics|computer-use|deep-research|gemma/i.test(id)
+          !/^gemini-(1\.0|1\.5|2\.0|2\.5-flash$)/i.test(id) &&
+          !/embedding|aqa|imagen|veo|tts|audio|robotics|computer-use|deep-research|gemma|bisect/i.test(id)
         )
         .sort((a, b) => {
           const sa = scoreGeminiModel(a);
@@ -272,13 +272,103 @@
     const firstBrace = stripped.indexOf('{');
     const lastBrace = stripped.lastIndexOf('}');
     if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) {
-      throw new Error('AI応答の解析に失敗しました');
+      throw new Error('AI応答の形式を解析できませんでした');
     }
-    const jsonSlice = stripped.slice(firstBrace, lastBrace + 1);
+    // 数値内の桁区切りカンマ（例: "calories": 1,550）を除去してJSON.parseを安定させる
+    const jsonSlice = stripped
+      .slice(firstBrace, lastBrace + 1)
+      .replace(/:\s*(\d{1,3}),(\d{3})(?=\s*[,}\]])/g, ': $1$2');
     return JSON.parse(jsonSlice);
   }
 
-  async function requestGenerateContent(apiKey, modelId, parts, useSearch = false) {
+  // キー:値テキストとJSONの両方から栄養価データを確実に抽出するパーサー
+  function parseNutritionResponse(rawText) {
+    const text = String(rawText || '').trim();
+
+    // 1. まずJSONが含まれていればそちらを優先解析
+    try {
+      const obj = extractJsonObject(text);
+      const cal = Number(String(obj.calories ?? '').replace(/,/g, ''));
+      if (!Number.isNaN(cal) && cal > 0) {
+        return {
+          name: obj.name || '',
+          calories: Math.round(cal),
+          p: Number(String(obj.p ?? 0).replace(/,/g, '')) || 0,
+          f: Number(String(obj.f ?? 0).replace(/,/g, '')) || 0,
+          c: Number(String(obj.c ?? 0).replace(/,/g, '')) || 0,
+          note: obj.note || '',
+          breakdown: Array.isArray(obj.breakdown) ? obj.breakdown : []
+        };
+      }
+    } catch {
+      // JSONでない場合は下の行ベース抽出へ進む
+    }
+
+    // 2. 行ベース（KEY: VALUE 形式や自然文）から数値を抽出
+    const grabNum = (patterns) => {
+      for (const re of patterns) {
+        const m = text.match(re);
+        if (m && m[1]) {
+          const val = parseFloat(m[1].replace(/,/g, ''));
+          if (!Number.isNaN(val)) return val;
+        }
+      }
+      return null;
+    };
+
+    const calories = grabNum([
+      /CALORIES\s*[:：]\s*約?\s*([\d,]+(?:\.\d+)?)/i,
+      /(?:総?カロリー|エネルギー)\s*[:：]?\s*約?\s*([\d,]+(?:\.\d+)?)\s*(?:kcal|キロカロリー)?/i,
+      /約?\s*([\d,]{2,5})\s*kcal/i
+    ]);
+
+    if (calories === null || calories <= 0) {
+      throw new Error('AIの回答からカロリー数値を読み取れませんでした');
+    }
+
+    const p = grabNum([
+      /PROTEIN\s*[:：]\s*約?\s*([\d,]+(?:\.\d+)?)/i,
+      /(?:タンパク質|たんぱく質|P)\s*[:：]\s*約?\s*([\d,]+(?:\.\d+)?)\s*g?/i
+    ]) ?? 0;
+
+    const f = grabNum([
+      /FAT\s*[:：]\s*約?\s*([\d,]+(?:\.\d+)?)/i,
+      /(?:脂質|F)\s*[:：]\s*約?\s*([\d,]+(?:\.\d+)?)\s*g?/i
+    ]) ?? 0;
+
+    const c = grabNum([
+      /CARBS?\s*[:：]\s*約?\s*([\d,]+(?:\.\d+)?)/i,
+      /(?:炭水化物|糖質|C)\s*[:：]\s*約?\s*([\d,]+(?:\.\d+)?)\s*g?/i
+    ]) ?? 0;
+
+    const nameMatch = text.match(/NAME\s*[:：]\s*(.+)/i) || text.match(/料理名\s*[:：]\s*(.+)/);
+    const noteMatch = text.match(/NOTE\s*[:：]\s*(.+)/i) || text.match(/(?:メモ|目安|根拠)\s*[:：]\s*(.+)/);
+
+    const breakdown = [];
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+      const bm = line.match(/^[-・*]\s*([^|｜:：]+?)\s*[|｜:：]\s*(?:約?\s*(\d+)\s*g\s*[|｜:：]\s*)?約?\s*([\d,]+)\s*kcal/i);
+      if (bm) {
+        breakdown.push({
+          item: bm[1].trim(),
+          grams: bm[2] ? parseInt(bm[2], 10) : 0,
+          calories: parseInt(bm[3].replace(/,/g, ''), 10) || 0
+        });
+      }
+    }
+
+    return {
+      name: nameMatch ? nameMatch[1].trim() : '',
+      calories: Math.round(calories),
+      p: Math.round(p * 10) / 10,
+      f: Math.round(f * 10) / 10,
+      c: Math.round(c * 10) / 10,
+      note: noteMatch ? noteMatch[1].trim() : '',
+      breakdown
+    };
+  }
+
+  async function requestGenerateContent(apiKey, modelId, parts, useSearch = false, wantJson = false) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`;
     const body = {
       contents: [{ role: 'user', parts }],
@@ -288,7 +378,7 @@
     };
     if (useSearch) {
       body.tools = [{ google_search: {} }];
-    } else {
+    } else if (wantJson) {
       body.generationConfig.responseMimeType = 'application/json';
     }
     return fetch(endpoint, {
@@ -298,11 +388,12 @@
     });
   }
 
-  async function callGeminiJSON(promptText, base64DataUrl = null, options = {}) {
+  async function callGemini(promptText, base64DataUrl = null, options = {}) {
     const apiKey = getApiKey();
-    if (!apiKey) return null; // 未設定時は呼び出し元でデモ応答へフォールバック
+    if (!apiKey) return null;
 
     const useSearch = !!options.useSearch;
+    const parserMode = options.parser || 'json'; // 'nutrition' | 'json'
     const parts = [{ text: promptText }];
     if (base64DataUrl) {
       const base64 = base64DataUrl.split(',')[1];
@@ -311,49 +402,49 @@
 
     const cachedModel = (localStorage.getItem(MODEL_CACHE_STORAGE) || '').trim();
     const candidates = [];
-    if (cachedModel) candidates.push(cachedModel);
+    if (cachedModel && !/^gemini-(1\.0|1\.5|2\.0|2\.5-flash$)/i.test(cachedModel)) {
+      candidates.push(cachedModel);
+    }
 
-    if (!cachedModel) {
+    if (candidates.length === 0) {
       const discovered = await discoverAvailableModels(apiKey);
       discovered.forEach(m => { if (!candidates.includes(m)) candidates.push(m); });
       FALLBACK_MODELS.forEach(m => { if (!candidates.includes(m)) candidates.push(m); });
     }
 
     let lastError = null;
-    let triedDiscovery = !cachedModel;
+    let triedDiscovery = candidates.length > 1;
 
     while (candidates.length > 0) {
       const modelId = candidates.shift();
-      let res = await requestGenerateContent(apiKey, modelId, parts, useSearch);
+      let res = await requestGenerateContent(apiKey, modelId, parts, useSearch, parserMode === 'json');
       let usedSearchActually = useSearch;
 
-      // 検索ツール非対応モデルで400が返った場合は、同じモデルで通常JSONモードに自動切替して再試行
+      // 検索ツールが400エラーの場合は同じモデルで検索オフにして再試行
       if (!res.ok && useSearch && res.status === 400) {
-        res = await requestGenerateContent(apiKey, modelId, parts, false);
+        res = await requestGenerateContent(apiKey, modelId, parts, false, parserMode === 'json');
         usedSearchActually = false;
       }
 
       if (res.ok) {
         const data = await res.json();
         const resParts = data?.candidates?.[0]?.content?.parts || [];
-        // Gemini 2.5 / 3 系の思考パート(thought: true)を除外して本文パートのみ結合
         const textParts = resParts
           .filter(p => !p.thought && typeof p.text === 'string')
           .map(p => p.text);
         const rawText = (textParts.length ? textParts.join('\n') : (resParts[0]?.text || '')).trim();
 
-        try {
-          const parsed = extractJsonObject(rawText);
-          const groundingChunks = data?.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-          parsed._grounded = usedSearchActually && groundingChunks.length > 0;
-          if (cachedModel !== modelId) {
-            localStorage.setItem(MODEL_CACHE_STORAGE, modelId);
-          }
-          return parsed;
-        } catch (parseErr) {
-          lastError = parseErr;
-          continue;
+        const parsed = parserMode === 'nutrition'
+          ? parseNutritionResponse(rawText)
+          : extractJsonObject(rawText);
+
+        const groundingChunks = data?.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+        parsed._grounded = usedSearchActually && groundingChunks.length > 0;
+        parsed._model = modelId;
+        if (cachedModel !== modelId) {
+          localStorage.setItem(MODEL_CACHE_STORAGE, modelId);
         }
+        return parsed;
       }
 
       const errText = await res.text();
@@ -397,20 +488,19 @@
 
       const prompt = `添付された料理写真からメニュー名と大まかな栄養価を算出してください。
 ${NUTRITION_SYSTEM_RULE}
-以下のJSON形式のみで返答してください（JSON以外の説明文は出力しないこと）:
-{
-  "name": "料理名（日本語・簡潔に）",
-  "calories": 数値(整数),
-  "p": 数値(小数1桁),
-  "f": 数値(小数1桁),
-  "c": 数値(小数1桁),
-  "note": "写真から読み取った量や栄養バランスの一言コメント",
-  "breakdown": [
-    { "item": "食材・構成名", "grams": 数値, "calories": 数値, "p": 数値, "f": 数値, "c": 数値 }
-  ]
-}`;
 
-      let result = await callGeminiJSON(prompt, aiDataUrl, { useSearch: true });
+必ず以下の書式で出力してください（余計な挨拶は不要）:
+NAME: 料理名
+CALORIES: 数値(整数)
+PROTEIN: 数値(小数1桁)
+FAT: 数値(小数1桁)
+CARBS: 数値(小数1桁)
+NOTE: 写真から読み取った量や栄養バランスの一言コメント
+BREAKDOWN:
+- 食材名 | 120g | 230kcal
+- 食材名 | 150g | 240kcal`;
+
+      let result = await callGemini(prompt, aiDataUrl, { useSearch: true, parser: 'nutrition' });
       if (!result) {
         result = {
           name: '鶏の照り焼き定食（デモ解析）',
@@ -420,11 +510,11 @@ ${NUTRITION_SYSTEM_RULE}
           c: 76.5,
           note: '※APIキー未設定のためデモ結果です。「食材・設定」タブにGemini APIキーを登録すると実写真の解析が行われます。',
           breakdown: [
-            { item: '鶏もも肉（皮つき）', grams: 120, calories: 228, p: 20.8, f: 14.3, c: 0.0 },
-            { item: '精白米（めし）', grams: 160, calories: 250, p: 4.0, f: 0.5, c: 59.4 },
-            { item: '照り焼き調味料（醤油・みりん・砂糖）', grams: 25, calories: 52, p: 1.2, f: 0.0, c: 11.2 },
-            { item: '味噌汁（豆腐・わかめ）', grams: 150, calories: 58, p: 4.4, f: 2.1, c: 5.1 },
-            { item: 'サラダ油（調理用）', grams: 6, calories: 54, p: 0.0, f: 6.0, c: 0.0 }
+            { item: '鶏もも肉（皮つき）', grams: 120, calories: 228 },
+            { item: '精白米（めし）', grams: 160, calories: 250 },
+            { item: '照り焼き調味料（醤油・みりん・砂糖）', grams: 25, calories: 52 },
+            { item: '味噌汁（豆腐・わかめ）', grams: 150, calories: 58 },
+            { item: 'サラダ油（調理用）', grams: 6, calories: 54 }
           ]
         };
       }
@@ -462,18 +552,17 @@ ${NUTRITION_SYSTEM_RULE}
 対象メニュー・食事: 「${dishName.trim()}」
 ${NUTRITION_SYSTEM_RULE}
 
-以下のJSON形式のみで返答してください（JSON以外の前置きや補足文は出力しないこと）:
-{
-  "calories": 数値(整数),
-  "p": 数値(小数1桁),
-  "f": 数値(小数1桁),
-  "c": 数値(小数1桁),
-  "note": "想定した1人前の量・サイズ感・目安レンジの簡潔な説明（例：標準サイズ・麺300g想定でおよそ1,400〜1,600kcalの目安）",
-  "breakdown": [
-    { "item": "食材・構成パーツ名", "grams": 数値, "calories": 数値 }
-  ]
-}`;
-      let res = await callGeminiJSON(prompt, null, { useSearch: true });
+必ず以下の書式で出力してください（余計な挨拶は不要）:
+CALORIES: 数値(整数)
+PROTEIN: 数値(小数1桁)
+FAT: 数値(小数1桁)
+CARBS: 数値(小数1桁)
+NOTE: 想定した1人前の量・サイズ感・目安レンジの簡潔な説明（例：標準サイズ・麺300g・全マシ想定でおよそ1,600〜1,800kcalの目安）
+BREAKDOWN:
+- 食材・構成パーツ名 | 300g | 1050kcal
+- 食材・構成パーツ名 | 120g | 320kcal`;
+
+      let res = await callGemini(prompt, null, { useSearch: true, parser: 'nutrition' });
       if (!res) {
         res = {
           calories: 560,
@@ -511,7 +600,7 @@ ${NUTRITION_SYSTEM_RULE}
     { "name": "食材名（例：鶏むね肉）", "amount": "分量目安（例：300g / 1パック）", "category": "肉・魚|野菜・きのこ|卵・乳・大豆|主食・麺|調味料・他" }
   ]
 }`;
-      let res = await callGeminiJSON(prompt, aiDataUrl);
+      let res = await callGemini(prompt, aiDataUrl, { useSearch: false, parser: 'json' });
       if (!res || !Array.isArray(res.items)) {
         res = {
           items: [
@@ -573,7 +662,7 @@ ${NUTRITION_SYSTEM_RULE}
 }
 ※menusのキーには指定された対象曜日キーのみを含めてください。`;
 
-      let res = await callGeminiJSON(prompt);
+      let res = await callGemini(prompt, null, { useSearch: false, parser: 'json' });
       if (!res || !res.menus) {
         const scale = dinnerGuide / 700;
         const pool = [
@@ -765,7 +854,7 @@ ${NUTRITION_SYSTEM_RULE}
         ? `<p class="muted-text small">記録なし</p>`
         : items.map(item => {
             const bdText = (item.breakdown && item.breakdown.length)
-              ? `<div class="meal-breakdown-mini">内訳目安: ${item.breakdown.map(b => `${escapeHtml(b.item)} ${b.grams}g(${b.calories}kcal)`).join(' / ')}</div>`
+              ? `<div class="meal-breakdown-mini">内訳目安: ${item.breakdown.map(b => `${escapeHtml(b.item)}${b.grams ? ` ${b.grams}g` : ''}(${b.calories}kcal)`).join(' / ')}</div>`
               : '';
             return `
               <div class="meal-row">
@@ -810,7 +899,7 @@ ${NUTRITION_SYSTEM_RULE}
         bodyHtml = `<p class="muted-text small">未設定（「手持ち食材から作成」または「編集」で設定）</p>`;
       } else {
         const bdMini = (m.breakdown && m.breakdown.length)
-          ? `<div class="meal-breakdown-mini">内訳目安: ${m.breakdown.map(b => `${escapeHtml(b.item)} ${b.grams}g(${b.calories}kcal)`).join(' / ')}</div>`
+          ? `<div class="meal-breakdown-mini">内訳目安: ${m.breakdown.map(b => `${escapeHtml(b.item)}${b.grams ? ` ${b.grams}g` : ''}(${b.calories}kcal)`).join(' / ')}</div>`
           : '';
         bodyHtml = `
           <div class="menu-dish-title">${escapeHtml(m.name)}</div>
@@ -1261,9 +1350,10 @@ ${NUTRITION_SYSTEM_RULE}
       $('#meal-input-f').value = fVal;
       $('#meal-input-c').value = cVal;
       const groundedTag = res._grounded ? '（Web検索参照）' : '';
-      currentMealDraftNote = (res.note || `目安カロリー: ${cal} kcal`) + groundedTag;
+      currentMealDraftNote = (res.note || `目安カロリー: ${cal.toLocaleString()} kcal`) + groundedTag;
       currentMealDraftBreakdown = Array.isArray(res.breakdown) ? res.breakdown : [];
       renderMealModalBreakdown();
+      renderSettingsTab();
       showToast(`約 ${cal.toLocaleString()} kcal で算出しました`);
     });
 
