@@ -4,7 +4,7 @@
   // ================= 定数・設定 =================
   const STORAGE_KEY = 'meal_planner_split_v1';
   const API_KEY_STORAGE = 'meal_planner_gemini_key';
-  const MODEL_CACHE_STORAGE = 'meal_planner_gemini_model';
+  const MODEL_CACHE_STORAGE = 'meal_planner_gemini_model_v2';
   const FALLBACK_MODELS = [
     'gemini-flash-latest',
     'gemini-3-flash-preview',
@@ -29,11 +29,12 @@
     { key: 'snack', label: '☕ 間食・その他' }
   ];
 
-  // 方法1: 日本食品標準成分表（八訂）ベースの厳格計算ルール
+  // カロリー・栄養価算出の共通ルール（検索情報＋日本食品標準成分表ベース）
   const NUTRITION_SYSTEM_RULE = [
-    '計算は必ず文部科学省「日本食品標準成分表（八訂）」の数値を基準に行うこと。',
-    '料理は必ず構成食材と推定グラム数（g）に分解し、調理油や調味料（サラダ油・醤油・みりん・砂糖・マヨネーズ等）も含めて各食材の100gあたり栄養価から個別計算し、その合算値を料理全体のカロリー(kcal)とPFC(g)にすること。',
-    '推測で丸めた数値ではなく、内訳(breakdown)の合計と全体の数値が整合するように出力すること。'
+    'あなたは日本の食事・外食・栄養価に詳しい管理栄養士です。',
+    '外食チェーン（サイゼリヤ、吉野家、マック等）・コンビニ商品・ラーメン（二郎系ラーメン等）・一般的な家庭料理について、Google検索結果の公式栄養成分や一般的な1人前の実態データ、および文部科学省「日本食品標準成分表（八訂）」を基準に現実的で納得感のある大まかなカロリー(kcal)とPFC(g)を算出してください。',
+    '料理名に分量指定がない場合は、日本で一般的な1人前（例：二郎系ラーメンなら標準サイズ・麺300g・ブタ2枚・ヤサイ普通など）を想定し、何を基準に計算したかをnoteに簡潔に記載してください。',
+    '構成要素ごとの目安グラム数とカロリー内訳(breakdown)も作成し、内訳の合計と全体の数値が概ね整合するように出力してください。'
   ].join('\n');
 
   // ================= 状態管理 =================
@@ -63,6 +64,7 @@
   let historyRange = 7;
   let currentMealDraftPhoto = '';
   let currentMealDraftBreakdown = [];
+  let currentMealDraftNote = '';
   let editingDinnerDayKey = 'mon';
   let aiMenuDaySelection = {};
   let pendingReceiptItems = [];
@@ -121,7 +123,6 @@
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch {
-      // 容量逼迫時は古い写真のサムネイルから削除して再保存
       const dates = Object.keys(state.dailyLogs).sort();
       for (const dt of dates) {
         for (const item of state.dailyLogs[dt]) {
@@ -145,7 +146,6 @@
     const tdee = Math.round(bmr * p.activity);
     const autoTarget = Math.max(1200, tdee + Number(p.goalOffset));
     const target = p.useManualTarget ? Math.max(1000, Number(p.manualTarget) || autoTarget) : autoTarget;
-    // 参考PFCバランス (P:20%, F:25%, C:55%)
     const targetP = Math.round((target * 0.2) / 4);
     const targetF = Math.round((target * 0.25) / 9);
     const targetC = Math.round((target * 0.55) / 4);
@@ -163,10 +163,10 @@
     el.textContent = msg;
     el.classList.remove('hidden');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.add('hidden'), 2600);
+    toastTimer = setTimeout(() => el.classList.add('hidden'), 3200);
   }
 
-  function setLoading(show, text = 'AIが成分表ベースで計算中...') {
+  function setLoading(show, text = 'AIが検索・カロリー計算中...') {
     $('#loading-text').textContent = text;
     $('#loading-overlay').classList.toggle('hidden', !show);
   }
@@ -182,7 +182,6 @@
       .replace(/"/g, '&quot;');
   }
 
-  // 方法3: eiyoukeisan.com を開く（キーワードがあればサイト内検索、なければトップ）
   function openEiyouKeisan(keyword = '') {
     const q = keyword.trim();
     const url = q
@@ -219,7 +218,7 @@
     });
   }
 
-  // ================= Gemini API 通信（最新モデル自動選択・フォールバック対応） =================
+  // ================= Gemini API 通信（Web検索グラウンディング＆最新モデル自動選択対応） =================
   function getApiKey() {
     return (localStorage.getItem(API_KEY_STORAGE) || '').trim();
   }
@@ -229,9 +228,9 @@
     const ver = verMatch ? parseFloat(verMatch[1]) : 0;
     const isFlash = /flash/i.test(modelId) ? 1 : 0;
     const isStandardSize = /lite|8b/i.test(modelId) ? 0 : 1;
-    const isStable = /preview|exp/i.test(modelId) ? 0 : 1;
     const isLatestAlias = modelId === 'gemini-flash-latest' ? 1 : 0;
-    return [isFlash, ver, isStandardSize, isStable, isLatestAlias];
+    const isStable = /preview|exp/i.test(modelId) ? 0 : 1;
+    return [isFlash, isLatestAlias, ver, isStandardSize, isStable];
   }
 
   async function discoverAvailableModels(apiKey) {
@@ -265,37 +264,55 @@
     }
   }
 
-  async function requestGenerateContent(apiKey, modelId, parts) {
+  function extractJsonObject(rawText) {
+    const stripped = String(rawText || '')
+      .replace(/```json\s*/gi, '')
+      .replace(/```/g, '')
+      .trim();
+    const firstBrace = stripped.indexOf('{');
+    const lastBrace = stripped.lastIndexOf('}');
+    if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) {
+      throw new Error('AI応答の解析に失敗しました');
+    }
+    const jsonSlice = stripped.slice(firstBrace, lastBrace + 1);
+    return JSON.parse(jsonSlice);
+  }
+
+  async function requestGenerateContent(apiKey, modelId, parts, useSearch = false) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const body = {
+      contents: [{ role: 'user', parts }],
+      generationConfig: {
+        temperature: 0.25
+      }
+    };
+    if (useSearch) {
+      body.tools = [{ google_search: {} }];
+    } else {
+      body.generationConfig.responseMimeType = 'application/json';
+    }
     return fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.25
-        }
-      })
+      body: JSON.stringify(body)
     });
   }
 
-  async function callGeminiJSON(promptText, base64DataUrl = null) {
+  async function callGeminiJSON(promptText, base64DataUrl = null, options = {}) {
     const apiKey = getApiKey();
     if (!apiKey) return null; // 未設定時は呼び出し元でデモ応答へフォールバック
 
+    const useSearch = !!options.useSearch;
     const parts = [{ text: promptText }];
     if (base64DataUrl) {
       const base64 = base64DataUrl.split(',')[1];
       parts.push({ inlineData: { mimeType: 'image/jpeg', data: base64 } });
     }
 
-    // 1. 前回成功したモデルがキャッシュされていれば最優先で試す
     const cachedModel = (localStorage.getItem(MODEL_CACHE_STORAGE) || '').trim();
     const candidates = [];
     if (cachedModel) candidates.push(cachedModel);
 
-    // 2. キャッシュがない場合はAPIから利用可能な最新モデル一覧を取得して並べる
     if (!cachedModel) {
       const discovered = await discoverAvailableModels(apiKey);
       discovered.forEach(m => { if (!candidates.includes(m)) candidates.push(m); });
@@ -307,27 +324,45 @@
 
     while (candidates.length > 0) {
       const modelId = candidates.shift();
-      const res = await requestGenerateContent(apiKey, modelId, parts);
+      let res = await requestGenerateContent(apiKey, modelId, parts, useSearch);
+      let usedSearchActually = useSearch;
+
+      // 検索ツール非対応モデルで400が返った場合は、同じモデルで通常JSONモードに自動切替して再試行
+      if (!res.ok && useSearch && res.status === 400) {
+        res = await requestGenerateContent(apiKey, modelId, parts, false);
+        usedSearchActually = false;
+      }
 
       if (res.ok) {
-        if (cachedModel !== modelId) {
-          localStorage.setItem(MODEL_CACHE_STORAGE, modelId);
-        }
         const data = await res.json();
-        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        const cleaned = rawText.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
-        return JSON.parse(cleaned);
+        const resParts = data?.candidates?.[0]?.content?.parts || [];
+        // Gemini 2.5 / 3 系の思考パート(thought: true)を除外して本文パートのみ結合
+        const textParts = resParts
+          .filter(p => !p.thought && typeof p.text === 'string')
+          .map(p => p.text);
+        const rawText = (textParts.length ? textParts.join('\n') : (resParts[0]?.text || '')).trim();
+
+        try {
+          const parsed = extractJsonObject(rawText);
+          const groundingChunks = data?.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+          parsed._grounded = usedSearchActually && groundingChunks.length > 0;
+          if (cachedModel !== modelId) {
+            localStorage.setItem(MODEL_CACHE_STORAGE, modelId);
+          }
+          return parsed;
+        } catch (parseErr) {
+          lastError = parseErr;
+          continue;
+        }
       }
 
       const errText = await res.text();
       lastError = new Error(`APIエラー (${res.status}): ${errText.slice(0, 120)}`);
 
-      // 認証・権限エラー(401/403)はモデル変更では直らないため即終了
       if (res.status === 401 || res.status === 403) {
         throw lastError;
       }
 
-      // モデル終了・未対応(404/400)ならキャッシュを破棄し、最新モデル一覧を再取得して次の候補へ
       if (res.status === 404 || res.status === 400) {
         localStorage.removeItem(MODEL_CACHE_STORAGE);
         if (!triedDiscovery) {
@@ -343,7 +378,6 @@
         continue;
       }
 
-      // その他のエラー(429/503等)は別モデル候補が残っていればフォールバック
       if (candidates.length === 0) {
         throw lastError;
       }
@@ -352,18 +386,18 @@
     throw lastError || new Error('利用可能なGeminiモデルが見つかりませんでした');
   }
 
-  // ================= AI 機能（方法1準拠） =================
+  // ================= AI 機能 =================
 
-  // 1. 料理写真からカロリー・PFCを成分表ベースで算出
+  // 1. 料理写真からカロリー・PFCを算出
   async function analyzeMealPhoto(file) {
-    setLoading(true, '写真を解析し、食材ごとにグラム分解計算中...');
+    setLoading(true, '写真を解析し、食材・メニューからカロリー計算中...');
     try {
       const aiDataUrl = await resizeImageFile(file, 1024, 0.78);
       const thumbDataUrl = await resizeImageFile(file, 240, 0.55);
 
-      const prompt = `あなたは管理栄養士です。添付された料理写真からメニュー名と栄養価を算出してください。
+      const prompt = `添付された料理写真からメニュー名と大まかな栄養価を算出してください。
 ${NUTRITION_SYSTEM_RULE}
-以下のJSON形式のみで返答してください:
+以下のJSON形式のみで返答してください（JSON以外の説明文は出力しないこと）:
 {
   "name": "料理名（日本語・簡潔に）",
   "calories": 数値(整数),
@@ -372,13 +406,12 @@ ${NUTRITION_SYSTEM_RULE}
   "c": 数値(小数1桁),
   "note": "写真から読み取った量や栄養バランスの一言コメント",
   "breakdown": [
-    { "item": "食材名", "grams": 数値, "calories": 数値, "p": 数値, "f": 数値, "c": 数値 }
+    { "item": "食材・構成名", "grams": 数値, "calories": 数値, "p": 数値, "f": 数値, "c": 数値 }
   ]
 }`;
 
-      let result = await callGeminiJSON(prompt, aiDataUrl);
+      let result = await callGeminiJSON(prompt, aiDataUrl, { useSearch: true });
       if (!result) {
-        // APIキー未設定時のデモ応答（日本食品標準成分表・八訂ベース）
         result = {
           name: '鶏の照り焼き定食（デモ解析）',
           calories: 642,
@@ -396,6 +429,7 @@ ${NUTRITION_SYSTEM_RULE}
         };
       }
 
+      const groundedTag = result._grounded ? '（Web検索参照）' : '';
       openMealModal({
         title: '📷 写真のカロリー算出結果',
         name: result.name || '',
@@ -403,7 +437,7 @@ ${NUTRITION_SYSTEM_RULE}
         p: Number(result.p || 0),
         f: Number(result.f || 0),
         c: Number(result.c || 0),
-        note: result.note || '日本食品標準成分表（八訂）に基づき算出しました。',
+        note: (result.note || '栄養成分データに基づき算出しました。') + groundedTag,
         breakdown: Array.isArray(result.breakdown) ? result.breakdown : [],
         photo: thumbDataUrl,
         timing: guessTimingByClock()
@@ -415,46 +449,50 @@ ${NUTRITION_SYSTEM_RULE}
     }
   }
 
-  // 2. テキスト料理名から成分表ベースでカロリー推定
+  // 2. テキスト料理名からWeb検索＋AI推定で大まかなカロリー・PFCを算出
   async function estimateNutritionFromText(dishName) {
     if (!dishName.trim()) {
-      showToast('先に料理名を入力してください');
+      showToast('先に料理名・食べたものを入力してください');
       return null;
     }
-    setLoading(true, '日本食品標準成分表ベースで計算中...');
+    setLoading(true, `「${dishName.trim()}」のカロリーをAI検索・計算中...`);
     try {
-      const prompt = `あなたは管理栄養士です。以下の料理（1人前想定、分量指定があればそれに従う）のカロリーとPFCを算出してください。
-対象料理: 「${dishName}」
+      const prompt = `以下の食事・メニューについて、Google検索で公式栄養成分や一般的な1人前の栄養価を調べたうえで、大まかで実用的なカロリー(kcal)とPFC(g)を算出してください。
+
+対象メニュー・食事: 「${dishName.trim()}」
 ${NUTRITION_SYSTEM_RULE}
-以下のJSON形式のみで返答してください:
+
+以下のJSON形式のみで返答してください（JSON以外の前置きや補足文は出力しないこと）:
 {
   "calories": 数値(整数),
-  "p": 数値,
-  "f": 数値,
-  "c": 数値,
+  "p": 数値(小数1桁),
+  "f": 数値(小数1桁),
+  "c": 数値(小数1桁),
+  "note": "想定した1人前の量・サイズ感・目安レンジの簡潔な説明（例：標準サイズ・麺300g想定でおよそ1,400〜1,600kcalの目安）",
   "breakdown": [
-    { "item": "食材名", "grams": 数値, "calories": 数値 }
+    { "item": "食材・構成パーツ名", "grams": 数値, "calories": 数値 }
   ]
 }`;
-      let res = await callGeminiJSON(prompt);
+      let res = await callGeminiJSON(prompt, null, { useSearch: true });
       if (!res) {
         res = {
           calories: 560,
           p: 28.5,
           f: 16.0,
           c: 72.0,
+          note: '※APIキー未設定のためデモ値です。「食材・設定」タブでAPIキーを保存するとAI検索による実計算に切り替わります。',
           breakdown: [
             { item: '主菜（肉・魚 推定120g）', grams: 120, calories: 230 },
             { item: '主食（ご飯・麺 推定150g）', grams: 150, calories: 240 },
             { item: '野菜・調理油・調味料', grams: 80, calories: 90 }
           ]
         };
-        showToast('デモ計算を反映しました（APIキー設定で高精度化）');
+        showToast('デモ計算を反映しました（APIキー設定でAI検索計算）');
       }
       return res;
     } catch (err) {
-      showToast('計算エラー: ' + err.message);
-      return null;
+      showToast('AI計算エラー: ' + err.message);
+      return { _error: err.message };
     } finally {
       setLoading(false);
     }
@@ -507,7 +545,7 @@ ${NUTRITION_SYSTEM_RULE}
     const { dinnerGuide } = calcMetrics();
     const activePantry = state.pantry.filter(i => !i.used).map(i => `${i.name}(${i.amount || '適量'})`);
 
-    setLoading(true, `${targetDays.length}日分の夕食献立を成分表ベースで作成中...`);
+    setLoading(true, `${targetDays.length}日分の夕食献立をAIで作成中...`);
     try {
       const dayLabels = targetDays.map(k => WEEKDAYS.find(w => w.key === k).full).join('、');
       const prompt = `あなたは管理栄養士です。以下の条件で1週間分の夕食献立を作成してください。
@@ -537,7 +575,6 @@ ${NUTRITION_SYSTEM_RULE}
 
       let res = await callGeminiJSON(prompt);
       if (!res || !res.menus) {
-        // APIキー未設定時のデモ生成（目標カロリーに合わせて比率調整）
         const scale = dinnerGuide / 700;
         const pool = [
           {
@@ -598,7 +635,6 @@ ${NUTRITION_SYSTEM_RULE}
         showToast('デモ献立を作成しました（APIキー設定で実AI生成）');
       }
 
-      // 選択されなかった曜日は「除外」にマーク（一括作成時のみ）
       if (targetDays.length > 1) {
         WEEKDAYS.forEach(w => {
           state.weeklyMenu[w.key].excluded = !targetDays.includes(w.key);
@@ -701,7 +737,6 @@ ${NUTRITION_SYSTEM_RULE}
     $('#f-bar').style.width = `${Math.min(100, (totals.f / Math.max(1, targetF)) * 100)}%`;
     $('#c-bar').style.width = `${Math.min(100, (totals.c / Math.max(1, targetC)) * 100)}%`;
 
-    // 夕食献立との連動カード
     const linkedBox = $('#linked-dinner-box');
     const menuItem = dayInfo ? state.weeklyMenu[dayInfo.key] : null;
     if (dayInfo && menuItem && menuItem.name && !menuItem.excluded) {
@@ -722,7 +757,6 @@ ${NUTRITION_SYSTEM_RULE}
       linkedBox.innerHTML = '';
     }
 
-    // 時間帯別の食事リスト
     const secContainer = $('#daily-meal-sections');
     secContainer.innerHTML = TIMINGS.map(t => {
       const items = logs.filter(m => m.timing === t.key);
@@ -731,7 +765,7 @@ ${NUTRITION_SYSTEM_RULE}
         ? `<p class="muted-text small">記録なし</p>`
         : items.map(item => {
             const bdText = (item.breakdown && item.breakdown.length)
-              ? `<div class="meal-breakdown-mini">成分表内訳: ${item.breakdown.map(b => `${escapeHtml(b.item)} ${b.grams}g(${b.calories}kcal)`).join(' / ')}</div>`
+              ? `<div class="meal-breakdown-mini">内訳目安: ${item.breakdown.map(b => `${escapeHtml(b.item)} ${b.grams}g(${b.calories}kcal)`).join(' / ')}</div>`
               : '';
             return `
               <div class="meal-row">
@@ -776,7 +810,7 @@ ${NUTRITION_SYSTEM_RULE}
         bodyHtml = `<p class="muted-text small">未設定（「手持ち食材から作成」または「編集」で設定）</p>`;
       } else {
         const bdMini = (m.breakdown && m.breakdown.length)
-          ? `<div class="meal-breakdown-mini">成分表内訳: ${m.breakdown.map(b => `${escapeHtml(b.item)} ${b.grams}g(${b.calories}kcal)`).join(' / ')}</div>`
+          ? `<div class="meal-breakdown-mini">内訳目安: ${m.breakdown.map(b => `${escapeHtml(b.item)} ${b.grams}g(${b.calories}kcal)`).join(' / ')}</div>`
           : '';
         bodyHtml = `
           <div class="menu-dish-title">${escapeHtml(m.name)}</div>
@@ -841,7 +875,6 @@ ${NUTRITION_SYSTEM_RULE}
     $('#chart-target-legend').textContent = `破線: 目標 ${target} kcal`;
     $('#stat-avg-pfc').textContent = `平均PFC: P ${avgP}g / F ${avgF}g / C ${avgC}g`;
 
-    // カロリー推移SVG棒グラフ
     const maxVal = Math.max(target * 1.25, ...days.map(d => d.cal), 1000);
     const barW = historyRange === 7 ? 38 : 22;
     const gap = historyRange === 7 ? 10 : 6;
@@ -870,10 +903,8 @@ ${NUTRITION_SYSTEM_RULE}
       </svg>
     `;
 
-    // 体重推移SVG折れ線グラフ
     renderWeightChart();
 
-    // 日別ログ一覧（新しい順）
     const logList = $('#history-log-list');
     const revLogged = [...logged].reverse();
     if (revLogged.length === 0) {
@@ -936,7 +967,6 @@ ${NUTRITION_SYSTEM_RULE}
 
   // --- タブ4: 食材・設定 ---
   function renderSettingsTab() {
-    // 手持ち食材
     const pList = $('#pantry-list');
     if (state.pantry.length === 0) {
       pList.innerHTML = `<p class="muted-text small">手持ち食材が登録されていません。レシート撮影または手動追加で登録してください。</p>`;
@@ -954,7 +984,6 @@ ${NUTRITION_SYSTEM_RULE}
       `).join('');
     }
 
-    // 身体データ・目標
     const p = state.profile;
     const { bmr, tdee, target, dinnerGuide } = calcMetrics();
     $('#settings-target-cal').textContent = target.toLocaleString();
@@ -974,12 +1003,11 @@ ${NUTRITION_SYSTEM_RULE}
     $('#dinner-ratio-label').textContent = `${p.dinnerRatio || 40}%`;
     $('#dinner-cal-guide').textContent = dinnerGuide;
 
-    // APIキー＆自動選択モデル状態
     const savedKey = getApiKey();
     const activeModel = (localStorage.getItem(MODEL_CACHE_STORAGE) || '').trim();
     $('#input-api-key').value = savedKey;
     $('#api-key-status').textContent = savedKey
-      ? `✅ APIキー設定済み（使用モデル: ${activeModel || '最新モデルを自動選択'}）`
+      ? `✅ APIキー設定済み（Web検索＋AI計算有効 / モデル: ${activeModel || '最新モデルを自動選択'}）`
       : 'ℹ️ 未設定（現在はデモAIモードで動作中）';
   }
 
@@ -987,6 +1015,7 @@ ${NUTRITION_SYSTEM_RULE}
   function openMealModal(opts = {}) {
     currentMealDraftPhoto = opts.photo || '';
     currentMealDraftBreakdown = opts.breakdown || [];
+    currentMealDraftNote = opts.note || '';
 
     $('#modal-meal-title').textContent = opts.title || '食事を記録';
     $('#meal-input-timing').value = opts.timing || guessTimingByClock();
@@ -1000,7 +1029,7 @@ ${NUTRITION_SYSTEM_RULE}
     if (currentMealDraftPhoto) {
       prevWrap.classList.remove('hidden');
       $('#meal-photo-preview').src = currentMealDraftPhoto;
-      $('#meal-ai-note').textContent = opts.note || '';
+      $('#meal-ai-note').textContent = '';
     } else {
       prevWrap.classList.add('hidden');
     }
@@ -1009,17 +1038,50 @@ ${NUTRITION_SYSTEM_RULE}
     openModal('modal-meal');
   }
 
-  function renderMealModalBreakdown() {
+  function renderMealModalBreakdown(errorMsg = '') {
     const wrap = $('#meal-breakdown-wrap');
     const ul = $('#meal-breakdown-list');
-    if (!currentMealDraftBreakdown.length) {
-      wrap.classList.add('hidden');
+    if (!wrap || !ul) return;
+
+    let noteBox = document.getElementById('meal-ai-inline-note');
+    if (!noteBox) {
+      noteBox = document.createElement('div');
+      noteBox.id = 'meal-ai-inline-note';
+      noteBox.style.cssText = 'font-size:12px;line-height:1.5;padding:8px 10px;border-radius:8px;margin-bottom:8px;';
+      ul.parentNode.insertBefore(noteBox, ul);
+    }
+
+    if (errorMsg) {
+      wrap.classList.remove('hidden');
+      noteBox.style.display = 'block';
+      noteBox.style.background = '#fef2f2';
+      noteBox.style.color = '#b91c1c';
+      noteBox.style.border = '1px solid #fecaca';
+      noteBox.textContent = `⚠️ ${errorMsg}`;
+      ul.innerHTML = '';
       return;
     }
+
+    if (!currentMealDraftNote && !currentMealDraftBreakdown.length) {
+      wrap.classList.add('hidden');
+      noteBox.style.display = 'none';
+      return;
+    }
+
     wrap.classList.remove('hidden');
+    if (currentMealDraftNote) {
+      noteBox.style.display = 'block';
+      noteBox.style.background = '#ecfdf5';
+      noteBox.style.color = '#065f46';
+      noteBox.style.border = '1px solid #a7f3d0';
+      noteBox.textContent = `✨ ${currentMealDraftNote}`;
+    } else {
+      noteBox.style.display = 'none';
+    }
+
     ul.innerHTML = currentMealDraftBreakdown.map(b => `
       <li>
-        <span>${escapeHtml(b.item)}（約${b.grams}g）</span>
+        <span>${escapeHtml(b.item)}${b.grams ? `（約${b.grams}g）` : ''}</span>
         <strong>${b.calories} kcal</strong>
       </li>
     `).join('');
@@ -1121,9 +1183,8 @@ ${NUTRITION_SYSTEM_RULE}
 
   // ================= イベント登録 =================
   function bindEvents() {
-    // 下部タブ切替
     const tabTitles = {
-      meals: ['食事管理', '日本食品標準成分表ベース計算'],
+      meals: ['食事管理', 'AI検索＆成分表ベース計算'],
       menu: ['夕食献立（月〜日）', '手持ち食材から必要な曜日だけ作成'],
       history: ['推移・履歴', '日別カロリー・PFC・体重ログ'],
       settings: ['食材・設定', 'レシート読込・身体データ・API設定']
@@ -1140,7 +1201,6 @@ ${NUTRITION_SYSTEM_RULE}
       });
     });
 
-    // モーダル閉じる
     $$('[data-close]').forEach(btn => {
       btn.addEventListener('click', () => closeModal(btn.dataset.close));
     });
@@ -1148,7 +1208,6 @@ ${NUTRITION_SYSTEM_RULE}
       bg.addEventListener('click', e => { if (e.target === bg) closeModal(bg.id); });
     });
 
-    // タブ1: 曜日切替・削除・連動チェック
     $('#meal-weekday-strip').addEventListener('click', e => {
       const btn = e.target.closest('[data-date]');
       if (!btn) return;
@@ -1173,7 +1232,6 @@ ${NUTRITION_SYSTEM_RULE}
       showToast('食事記録を削除しました');
     });
 
-    // 料理写真・手動記録
     $('#btn-meal-camera').addEventListener('click', () => $('#input-meal-camera').click());
     $('#btn-meal-album').addEventListener('click', () => $('#input-meal-album').click());
     $('#input-meal-camera').addEventListener('change', e => {
@@ -1184,18 +1242,29 @@ ${NUTRITION_SYSTEM_RULE}
       if (e.target.files[0]) analyzeMealPhoto(e.target.files[0]);
       e.target.value = '';
     });
-    $('#btn-meal-manual').addEventListener('click', () => openMealModal({ title: '食事を手入力 / AI推定' }));
+    $('#btn-meal-manual').addEventListener('click', () => openMealModal({ title: '食事を手入力 / AI検索計算' }));
 
-    // 食事モーダル内: AIテキスト計算 & eiyoukeisan.com検索 & 保存
+    // 食事モーダル内: AI検索カロリー計算 & eiyoukeisan.com検索 & 保存
     $('#btn-estimate-text-cal').addEventListener('click', async () => {
       const res = await estimateNutritionFromText($('#meal-input-name').value);
       if (!res) return;
-      $('#meal-input-cal').value = Math.round(res.calories || 0);
-      $('#meal-input-p').value = Number(res.p || 0);
-      $('#meal-input-f').value = Number(res.f || 0);
-      $('#meal-input-c').value = Number(res.c || 0);
+      if (res._error) {
+        renderMealModalBreakdown(res._error);
+        return;
+      }
+      const cal = Math.round(res.calories || 0);
+      const pVal = Number(res.p || 0);
+      const fVal = Number(res.f || 0);
+      const cVal = Number(res.c || 0);
+      $('#meal-input-cal').value = cal;
+      $('#meal-input-p').value = pVal;
+      $('#meal-input-f').value = fVal;
+      $('#meal-input-c').value = cVal;
+      const groundedTag = res._grounded ? '（Web検索参照）' : '';
+      currentMealDraftNote = (res.note || `目安カロリー: ${cal} kcal`) + groundedTag;
       currentMealDraftBreakdown = Array.isArray(res.breakdown) ? res.breakdown : [];
       renderMealModalBreakdown();
+      showToast(`約 ${cal.toLocaleString()} kcal で算出しました`);
     });
 
     $('#btn-eiyou-meal-search').addEventListener('click', () => {
@@ -1260,10 +1329,9 @@ ${NUTRITION_SYSTEM_RULE}
       if (eaten) { toggleLinkedDinner(eaten.dataset.menuEaten); }
     });
 
-    // 夕食手動編集モーダル
     $('#btn-estimate-dinner-cal').addEventListener('click', async () => {
       const res = await estimateNutritionFromText($('#edit-dinner-name').value);
-      if (!res) return;
+      if (!res || res._error) return;
       $('#edit-dinner-cal').value = Math.round(res.calories || 0);
       $('#edit-dinner-p').value = Number(res.p || 0);
       $('#edit-dinner-f').value = Number(res.f || 0);
@@ -1291,7 +1359,6 @@ ${NUTRITION_SYSTEM_RULE}
       showToast('夕食献立を保存しました');
     });
 
-    // レシピ検索モーダル
     $('#recipe-pantry-chips').addEventListener('click', e => {
       const chip = e.target.closest('[data-chip-word]');
       if (!chip) return;
@@ -1316,7 +1383,7 @@ ${NUTRITION_SYSTEM_RULE}
 
     $('#btn-estimate-recipe-cal').addEventListener('click', async () => {
       const res = await estimateNutritionFromText($('#recipe-import-name').value);
-      if (!res) return;
+      if (!res || res._error) return;
       $('#recipe-import-cal').value = Math.round(res.calories || 0);
       $('#recipe-import-p').value = Number(res.p || 0);
       $('#recipe-import-f').value = Number(res.f || 0);
@@ -1455,7 +1522,6 @@ ${NUTRITION_SYSTEM_RULE}
       }
     });
 
-    // 身体データ変更の即時保存
     const bindProfileUpdate = () => {
       const p = state.profile;
       p.weight = Math.max(20, parseFloat($('#prof-weight').value) || p.weight);
